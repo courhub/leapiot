@@ -65,18 +65,18 @@ class Events
         // Gateway::sendToClient($client_id, "Hello $client_id\r\n");
         // 向所有人发送
         // Gateway::sendToAll("$client_id login\r\n");
-        Gateway::setSession($client_id,array('id'=>'','clientid'=>$client_id,'sort'=>'','addrindex'=>0));
+        Gateway::setSession($client_id,array('id'=>'','clientid'=>$client_id,'sort'=>'','cycleindex'=>0,'connectbegin'=>new DataTime(),'cyclecount'=>0));
     }
     
-   /**
-    * 当客户端发来消息时触发
-    * @param int $client_id 连接id
-    * @param mixed $message 具体消息
-    */
-   public static function onMessage($client_id, $message)
-   {
-       global $dataaddr;
-       global $datakeys;
+    /**
+     * 当客户端发来消息时触发
+     * @param int $client_id 连接id
+     * @param mixed $message 具体消息
+     */
+    public static function onMessage($client_id, $message)
+    {
+        global $dataaddr;
+        global $datakeys;
         // 向所有人发送
         Gateway::sendToAll("$client_id said $message\r\n");
         //解包数据
@@ -88,7 +88,7 @@ class Events
             $eid = substr($data,3,4);
             if(!Gateway::getSession($client_id,'sort')){
                 Gateway::setSession($client_id,array('sort'=>'dryer','cycleindex'=>0,'data'=>array_fill_keys($datakeys['dryer'],''));
-                Gateway::setSession($client_id,array('cyclestart'=>new DataTime()));
+                Gateway::setSession($client_id,array('cyclebegin'=>new DataTime(),'cyclecount'=>Gateway::getSession($client_id,'sort')+1));
             }
         //Dryer GPS包
         }elseif($head == '$GP'){
@@ -100,15 +100,31 @@ class Events
         }elseif($data[0]==0x5A && $data[1]==0xA5){
 
         }
-   }
+    }
    
-   /**
-    * 当用户断开连接时触发
-    * @param int $client_id 连接id
-    */
-   public static function onClose($client_id)
-   {
-       // 向所有人发送 
-       GateWay::sendToAll("$client_id logout\r\n");
-   }
+    /**
+     * 当用户断开连接时触发
+     * @param int $client_id 连接id
+     */
+    public static function onClose($client_id)
+    {
+        // 向所有人发送 
+        GateWay::sendToAll("$client_id logout\r\n");
+    }
+
+    public static function freshStatus($client_id)
+    {
+        global $dataaddr;
+        global $datakeys;
+    }
+    public static function saveStatus($client_id)
+    {
+        global $dataaddr;
+        global $datakeys;
+    }
+    public static function saveCycle($client_id)
+    {
+        global $dataaddr;
+        global $datakeys;
+    }
 }
