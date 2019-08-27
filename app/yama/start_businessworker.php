@@ -11,7 +11,7 @@ require_once __DIR__ . '/../../vendor/autoload.php';
 // bussinessWorker 进程
 $worker = new BusinessWorker();
 // worker名称
-$worker->name = 'YourAppBusinessWorker';
+$worker->name = 'YamaIotWorker';
 // bussinessWorker进程数量
 $worker->count = 4;
 // 服务注册地址

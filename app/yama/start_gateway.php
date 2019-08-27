@@ -23,7 +23,7 @@ require_once __DIR__ . '/../../vendor/autoload.php';
 // gateway 进程，这里使用Text协议，可以用telnet测试
 $gateway = new Gateway("tcp://0.0.0.0:65001");
 // gateway名称，status方便查看
-$gateway->name = 'YourAppGateway';
+$gateway->name = 'LeapIotGateway';
 // gateway进程数
 $gateway->count = 4;
 // 本机ip，分布式部署时使用内网ip
