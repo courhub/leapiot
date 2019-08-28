@@ -66,6 +66,9 @@ class Events
         // 向所有人发送
         // Gateway::sendToAll("$client_id login\r\n");
         Gateway::setSession($client_id,array('id'=>'','clientid'=>$client_id,'sort'=>'','cycleindex'=>0,'connectbegin'=>new DataTime(),'cyclecount'=>0));
+        $_SESSION['id'] = '';
+        $_SESSION['clintid'] = $client_id;
+        $_SESSION['sort'] = '';
     }
     
     /**
@@ -87,15 +90,42 @@ class Events
         {
             $eid = substr($data,3,4);
             if(!Gateway::getSession($client_id,'sort')){
-                Gateway::setSession($client_id,array('sort'=>'dryer','cycleindex'=>0,'data'=>array_fill_keys($datakeys['dryer'],''));
+                $_SESSION['sort'] = 'dryer';
+                $_SESSION['data'] = array_fill_keys($datakeys['dryer'],'');
+                $_SESSION['cyclecount'] = 0;
+                $_SESSION['cycleindex'] = 0;
+                $_SESSION['connectbegin'] = new DateTime();
+                $_SESSION['gps'] = Array('lat'=> 0,'lon'=>0, 'velocity'=>0, 'direction'=>0, 'type' = '');   //纬度
+                
                 Gateway::setSession($client_id,array('cyclebegin'=>new DataTime(),'cyclecount'=>Gateway::getSession($client_id,'sort')+1));
+            }elseif($_SESSION['cycleindex']+1==count($datakeys[$_SESSION['sort']])){
+                $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
+                $_SESSION['cycleindex'] = 0;
+                //存储STATUS
+                
+                //存储CYCLE
+
             }
         //Dryer GPS包
         }elseif($head == '$GP'){
-            $adata = $data.explode();
+            $adata = $data.explode(',');
+            if($adata[0]!='$GPRMC'){
+            }elseif(count($adata)<10){
+            }elseif($adata[2]=='A'){
+                $lat=$adata[3];
+                $fLat=($adata[4]=='N'?1:-1) * (int)substr($lat,0,strlen($lat)-7) + (float)substr($lat,-7) / 60;
+                $lon=$adata[5];
+                $fLon=($adata[6]=='E'?1:-1) * (int)substr($lon,0,strlen($lon)-7) + (float)substr($lon,-7) / 60;
+                $_SESSION['gps']['lat']=$fLat; //纬度
+                $_SESSION['gps']['lon']=$fLon; //经度
+                $_SESSION['gps']['velocity']=(float)$adata[7] * 1.852 / 3.6; //速度 m/s
+                $_SESSION['gps']['direction']=$adata[8]; //方向
+                $_SESSION['gps']['type']=substr($adata[12],1); //定位态别
+            }
         //Dryer 数据
-        }elseif($data[0]==0x01 && $data[1]==0x03){
-        
+        }elseif($data[0]==0x01 && $data[1]==0x03 && $data[2]==0x02){
+            $_SESSION['data'][$datakeys[$_SESSION['sort']][$_SESSION['cycleindex']]] = $data[3]*64 + $data[3];
+            $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
         //平台
         }elseif($data[0]==0x5A && $data[1]==0xA5){
 
