@@ -20,6 +20,7 @@
 //declare(ticks=1);
 
 use \GatewayWorker\Lib\Gateway;
+use \Workerman\Worker;
 
 global $dataaddr;
 global $datakeys;
@@ -53,6 +54,12 @@ $datakeys = Array('dryer'=> array_keys($dataaddr['dryer']));
  */
 class Events
 {
+    public static function onWorkerStart($businessWorker)
+    {
+       global $db;
+       $db = new \Workerman\MySQL\Connection('host', 'port', 'user', 'password', 'db_name');
+    }
+
     /**
      * 当客户端连接时触发
      * 如果业务不需此回调可以删除onConnect
@@ -89,23 +96,23 @@ class Events
         if($head == '$$$' )
         {
             $eid = substr($data,3,4);
+            //第一次心跳 初始化设备参数
             if(!Gateway::getSession($client_id,'sort')){
                 $_SESSION['sort'] = 'dryer';
+                $_SESSION['addr'] = 0x01;
                 $_SESSION['data'] = array_fill_keys($datakeys['dryer'],'');
                 $_SESSION['cyclecount'] = 0;
                 $_SESSION['cycleindex'] = 0;
                 $_SESSION['connectbegin'] = new DateTime();
                 $_SESSION['gps'] = Array('lat'=> 0,'lon'=>0, 'velocity'=>0, 'direction'=>0, 'type' = '');   //纬度
-                
-                Gateway::setSession($client_id,array('cyclebegin'=>new DataTime(),'cyclecount'=>Gateway::getSession($client_id,'sort')+1));
+            
+            //持续心跳  循环次数递增 参数地址恢复
             }elseif($_SESSION['cycleindex']+1==count($datakeys[$_SESSION['sort']])){
                 $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
                 $_SESSION['cycleindex'] = 0;
-                //存储STATUS
-                
-                //存储CYCLE
-
             }
+            //发送第一笔数据请求
+            GateWay::sendAddr($client_id);
         //Dryer GPS包
         }elseif($head == '$GP'){
             $adata = $data.explode(',');
@@ -126,6 +133,9 @@ class Events
         }elseif($data[0]==0x01 && $data[1]==0x03 && $data[2]==0x02){
             $_SESSION['data'][$datakeys[$_SESSION['sort']][$_SESSION['cycleindex']]] = $data[3]*64 + $data[3];
             $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
+            GateWay::sendAddr($client_id);
+            GateWay::saveStatus($client_id);
+            GateWay::saveCycle($client_id);
         //平台
         }elseif($data[0]==0x5A && $data[1]==0xA5){
 
@@ -142,19 +152,39 @@ class Events
         GateWay::sendToAll("$client_id logout\r\n");
     }
 
-    public static function freshStatus($client_id)
+    //发送数据地址
+    public static function sendAddr($client_id)
     {
         global $dataaddr;
         global $datakeys;
+        if($_SESSION['cycleindex']<count($datakeys[$_SESSION['sort']])){
+            $hexs=$addaddr[$_SESSION['sort']][$datakeys[$_SESSION['cycleindex']]];
+            GateWay::sendToClient($client_id,pack('C*', $_SESSION['addr'],0x03,
+                                                        hex2bin(substr($hexs,0,2)),
+                                                        hex2bin(substr($hexs,2,2)),
+                                                        hex2bin(substr($hexs,4,2)),
+                                                        hex2bin(substr($hexs,6,2)),
+                                                        hex2bin(substr($hexs,8,2)),
+                                                        hex2bin(substr($hexs,10,2)) ));
+        }
     }
     public static function saveStatus($client_id)
     {
         global $dataaddr;
         global $datakeys;
+        global $db;
+        if($_SESSION['cycleindex']+1>count($datakeys[$_SESSION['sort']]))
+        {
+            if($_SESSION['cyclecount'] % 10 == 0){
+                
+            }
+        }
     }
     public static function saveCycle($client_id)
     {
         global $dataaddr;
         global $datakeys;
+        global $db;
+        
     }
 }
