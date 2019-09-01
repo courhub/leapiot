@@ -57,7 +57,7 @@ class Events
     public static function onWorkerStart($businessWorker)
     {
        global $db;
-       $db = new \Workerman\MySQL\Connection('host', 'port', 'user', 'password', 'db_name');
+       $db = new \Workerman\MySQL\Connection('localhost', '3306', 'root', '', 'yamamoto');
     }
 
     /**
@@ -104,7 +104,7 @@ class Events
                 $_SESSION['cyclecount'] = 0;
                 $_SESSION['cycleindex'] = 0;
                 $_SESSION['connectbegin'] = new DateTime();
-                $_SESSION['gps'] = Array('lat'=> 0,'lon'=>0, 'velocity'=>0, 'direction'=>0, 'type' = '');   //纬度
+                $_SESSION['gps'] = Array('lat'=> 0,'lon'=>0, 'velocity'=>0, 'direction'=>0, 'type' => '');   //纬度
             
             //持续心跳  循环次数递增 参数地址恢复
             }elseif($_SESSION['cycleindex']+1==count($datakeys[$_SESSION['sort']])){
