@@ -72,7 +72,12 @@ class Events
         // Gateway::sendToClient($client_id, "Hello $client_id\r\n");
         // 向所有人发送
         // Gateway::sendToAll("$client_id login\r\n");
-        Gateway::setSession($client_id,array('id'=>'','clientid'=>$client_id,'sort'=>'','cycleindex'=>0,'connectbegin'=>new DataTime(),'cyclecount'=>0));
+        Gateway::setSession($client_id,array(   'id'=>'',
+                                                'clientid'=>$client_id,
+                                                'sort'=>'',
+                                                'cycleindex'=>0,
+                                                'connectbegin'=>new DataTime(),
+                                                'cyclecount'=>0));
         $_SESSION['id'] = '';
         $_SESSION['clintid'] = $client_id;
         $_SESSION['sort'] = '';
@@ -88,7 +93,7 @@ class Events
         global $dataaddr;
         global $datakeys;
         // 向所有人发送
-        Gateway::sendToAll("$client_id said $message\r\n");
+        //Gateway::sendToAll("$client_id said $message\r\n");
         //解包数据
         $data = unpack("C*",$message);
         $head = substr($data,0,3);
@@ -175,7 +180,8 @@ class Events
         global $db;
         if($_SESSION['cycleindex']+1>count($datakeys[$_SESSION['sort']]))
         {
-            if($_SESSION['cyclecount'] % 10 == 0){
+            //每十次心跳保存一次cycle
+            if($_SESSION['cyclecount'] % 10 == 9){
                 
             }
         }
