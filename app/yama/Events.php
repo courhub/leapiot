@@ -24,28 +24,29 @@ use \Workerman\Worker;
 
 global $dataaddr;
 global $datakeys;
-$dataaddr = Array('dryer'=>Array('operation' => '01 03 00 00 00 01 84 0A',
-    'abnormal' => '01 03 00 01 00 01 D5 CA',
-    'operatingtype' => '01 03 00 0B 00 01 F5 C8',
-    'grainsortmp' => '01 03 00 0C 00 01 44 09',
-    'targetmst' => '01 03 00 0D 00 01 15 C9',
-    'loadedamt' => '01 03 00 0E 00 01 E5 C9',
-    'settmp' => '01 03 00 11 00 01 D4 0F',
-    'mstcorrection' => '01 03 00 12 00 01 24 0F',
-    'currentmst' => '01 03 00 14 00 01 C4 0E',
-    'mstvar' => '01 03 00 15 00 01 95 CE',
-    'hotairtmp' => '01 03 00 16 00 01 65 CE',
-    'outsidetmp' => '01 03 00 17 00 01 34 0E',
-    'operatinghour1' => '01 03 00 1C 00 01 45 CC',
-    'operatinghour2' =>'01 03 00 1D 00 01 14 O0',
-    'fullloaded' => '01 03 00 21 00 01 15 C9',
-    'hotairtmptarget' => '01 03 00 25 00 01 95 C1',
-    'timersetting' => '01 03 00 2E 00 01 E4 03',
-    'error12' => '01 03 00 64 00 01 C5 D5',
-    'error34' => '01 03 00 65 00 01 94 15',
-    'operatedhour1' => '01 03 00 6E 00 01 E5 D7',
-    'operatedhour2' => '01 03 00 6F 00 01 B4 17',
-    'model' => '01 03 00 78 00 01 04 13'));
+$dataaddr = Array('dryer'=>Array(
+    'operation'         => '010300000001840A',
+    'abnormal'          => '010300010001D5CA',
+    'operatingtype'     => '0103000B0001F5C8',
+    'grainsortmp'       => '0103000C00014409',
+    'targetmst'         => '0103000D000115C9',
+    'loadedamt'         => '0103000E0001E5C9',
+    'settmp'            => '010300110001D40F',
+    'mstcorrection'     => '010300120001240F',
+    'currentmst'        => '010300140001C40E',
+    'mstvar'            => '01030015000195CE',
+    'hotairtmp'         => '01030016000165CE',
+    'outsidetmp'        => '010300170001340E',
+    'operatinghour1'    => '0103001C000145CC',
+    'operatinghour2'    => '0103001D000114O0',
+    'fullloaded'        => '01030021000115C9',
+    'hotairtmptarget'   => '01030025000195C1',
+    'timersetting'      => '0103002E0001E403',
+    'error12'           => '010300640001C5D5',
+    'error34'           => '0103006500019415',
+    'operatedhour1'     => '0103006E0001E5D7',
+    'operatedhour2'     => '0103006F0001B417',
+    'model'             => '0103007800010413'));
 $datakeys = Array('dryer'=> array_keys($dataaddr['dryer']));
 /**
  * 主逻辑
@@ -72,15 +73,13 @@ class Events
         // Gateway::sendToClient($client_id, "Hello $client_id\r\n");
         // 向所有人发送
         // Gateway::sendToAll("$client_id login\r\n");
-        Gateway::setSession($client_id,array(   'id'=>'',
-                                                'clientid'=>$client_id,
-                                                'sort'=>'',
-                                                'cycleindex'=>0,
-                                                'connectbegin'=>new DataTime(),
-                                                'cyclecount'=>0));
         $_SESSION['id'] = '';
         $_SESSION['clintid'] = $client_id;
         $_SESSION['sort'] = '';
+        $_SESSION['cycleindex'] = 0;
+        $_SESSION['cyclecount'] = 0;
+        $_SESSION['connectbegin'] = new DateTime();
+        $_SESSION['connectend'] = '';
     }
     
     /**
@@ -95,7 +94,7 @@ class Events
         // 向所有人发送
         //Gateway::sendToAll("$client_id said $message\r\n");
         //解包数据
-        $data = unpack("C*",$message);
+        $data = join(unpack("a*",$message));
         $head = substr($data,0,3);
         //Dryer 心跳包
         if($head == '$$$' )
@@ -118,24 +117,28 @@ class Events
             }
             //发送第一笔数据请求
             GateWay::sendAddr($client_id);
+        }
         //Dryer GPS包
-        }elseif($head == '$GP'){
+        elseif($head == '$GP')
+        {
             $adata = $data.explode(',');
             if($adata[0]!='$GPRMC'){
             }elseif(count($adata)<10){
             }elseif($adata[2]=='A'){
                 $lat=$adata[3];
-                $fLat=($adata[4]=='N'?1:-1) * (int)substr($lat,0,strlen($lat)-7) + (float)substr($lat,-7) / 60;
+                $fLat=($adata[4]=='N'?1:-1) * (int)substr($lat,0,strlen($lat)-8) + (float)substr($lat,-8) / 60;
                 $lon=$adata[5];
-                $fLon=($adata[6]=='E'?1:-1) * (int)substr($lon,0,strlen($lon)-7) + (float)substr($lon,-7) / 60;
+                $fLon=($adata[6]=='E'?1:-1) * (int)substr($lon,0,strlen($lon)-8) + (float)substr($lon,-8) / 60;
                 $_SESSION['gps']['lat']=$fLat; //纬度
                 $_SESSION['gps']['lon']=$fLon; //经度
                 $_SESSION['gps']['velocity']=(float)$adata[7] * 1.852 / 3.6; //速度 m/s
                 $_SESSION['gps']['direction']=$adata[8]; //方向
                 $_SESSION['gps']['type']=substr($adata[12],1); //定位态别
             }
+        }
         //Dryer 数据
-        }elseif($data[0]==0x01 && $data[1]==0x03 && $data[2]==0x02){
+        elseif($data[0]==0x01 && $data[1]==0x03 && $data[2]==0x02)
+        {
             $_SESSION['data'][$datakeys[$_SESSION['sort']][$_SESSION['cycleindex']]] = $data[3]*64 + $data[3];
             $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
             GateWay::sendAddr($client_id);
