@@ -1,6 +1,7 @@
 <?php
-require_once __DIR__ . '/app/yama/Events.php';
-session_start();
+require_once __DIR__ . '\app\yama\Events.php';
+require_once __DIR__ . '\vendor\autoload.php';
+
 date_default_timezone_set('Asia/Shanghai');
 
 use \GatewayWorker\Lib\Gateway;
@@ -49,7 +50,7 @@ $datakeys = array('dryer' => array_keys($dataaddr['dryer']));
  * 1.每个字母后面都可以跟着一个数字，表示 count（计数），如果 count 是一个 * 表示剩下的所有东西。
  * 2.如果你提供的参数比 $format 要求的少，pack 假设缺的都是空值。如果你提供的参数比 $format 要求的多，那么多余的参数被忽略
  */
-Events::saveCycle('clintid001');
+
 //心跳包$$$$，及設備ID  format=a*
 $message = "$$$0001";
 //$message = unpack("C*",$message);
@@ -63,54 +64,18 @@ $message = "$$$0001";
 //$message = '$GPRMC,225530.000,A,3637.26040,N,11700.56340,E,10.000,97.17,220512,,,D*57';
 var_dump($message);
 //var_dump(pack("H*",$message)); 
+$client_id = 'FFF000CCC0001';
 
+//$amsg = unpack("a*", $message);
 
-$amsg = unpack("a*", $message);
+//$data = join($amsg);
+//$head = substr($data, 0, 3);
+//$eid = substr($data, 3, 4);
+//var_dump(array($amsg,$data, $head, $eid));
 
-$data = join($amsg);
-$head = substr($data, 0, 3);
-$eid = substr($data, 3, 4);
-var_dump(array($amsg,$data, $head, $eid));
-
-//Dryer 心跳包
-if ($head == '$$$') {
-    $_SESSION['now'] = new DateTime();
-    $eid = substr($data, 3, 4);
-    //第一次心跳 初始化设备参数
-    if (!$_SESSION['sort']) {
-        $_SESSION['sort'] = 'dryer';
-        $_SESSION['addr'] = 0x01;
-        $_SESSION['data'] = array_fill_keys($datakeys['dryer'], '');
-        $_SESSION['cyclecount'] = 0;
-        $_SESSION['cycleindex'] = 0;
-        $_SESSION['connectbegin'] = new DateTime();
-        $_SESSION['gps'] = array('lat' => 0, 'lon' => 0, 'velocity' => 0, 'direction' => 0, 'type' => '', 'locationdate'=>'');
-        print_r("===============================");
-        //持续心跳  循环次数递增 参数地址恢复
-    } elseif ($_SESSION['cycleindex'] + 1 == count($datakeys[$_SESSION['sort']])) {
-        $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
-        $_SESSION['cycleindex'] = 0;
-        print_r("===============================");
-    }
-    //发送第一笔数据请求
-    //GateWay::sendAddr($client_id);
-    //Dryer GPS包
-} else if ($head == '$GP') {
-    $adata = explode(',', $data);
-    if ($adata[0] != '$GPRMC') { } elseif (count($adata) < 12) { } elseif ($adata[2] == 'A') {
-        $lat = $adata[3];
-        $fLat = ($adata[4] == 'N' ? 1 : -1) * (int) substr($lat, 0, strlen($lat) - 8) + (float) substr($lat, -8) / 60;
-        $lon = $adata[5];
-        $fLon = ($adata[6] == 'E' ? 1 : -1) * (int) substr($lon, 0, strlen($lon) - 8) + (float) substr($lon, -8) / 60;
-        $type = substr($adata[12], 1);
-
-        $_SESSION['gps']['lat'] = $fLat; //纬度
-        $_SESSION['gps']['lon'] = $fLon; //经度
-        $_SESSION['gps']['velocity'] = (float) $adata[7] * 1.852 / 3.6; //速度 m/s
-        $_SESSION['gps']['direction'] = $adata[8]; //方向
-        $_SESSION['gps']['type'] = substr($adata[12], 1); //定位态别
-        $_SESSION['gps']['date'] = new DateTime(); //定位时间
-    }
-}
+Events::onConnect($client_id);
+//Events::onMessage($client_id, $message);
+//Events::onClose($client_id);
+Events::sendRecordAddr();
 
 var_dump($_SESSION);

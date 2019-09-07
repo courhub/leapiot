@@ -19,6 +19,10 @@
  */
 //declare(ticks=1);
 
+
+session_start();
+date_default_timezone_set('Asia/Shanghai');
+
 use \GatewayWorker\Lib\Gateway;
 use \Workerman\Worker;
 
@@ -94,46 +98,51 @@ class Events
         // 向所有人发送
         //Gateway::sendToAll("$client_id said $message\r\n");
         //解包数据
-        $data = join(unpack("a*",$message));
-        $head = substr($data,0,3);
+        $amsg = unpack("a*", $message);
+        $data = join($amsg);
+        $head = substr($data, 0, 3);
         //Dryer 心跳包
-        if($head == '$$$' )
-        {
-            $eid = substr($data,3,4);
+        if ($head == '$$$') {
+            $_SESSION['now'] = new DateTime();
+            $eid = substr($data, 3, 4);
             //第一次心跳 初始化设备参数
-            if(!Gateway::getSession($client_id,'sort')){
+            if (!$_SESSION['sort']) {
+                $_SESSION['eid'] = $eid;
                 $_SESSION['sort'] = 'dryer';
                 $_SESSION['addr'] = 0x01;
-                $_SESSION['data'] = array_fill_keys($datakeys['dryer'],'');
+                $_SESSION['record'] = array_fill_keys($datakeys['dryer'], '');
                 $_SESSION['cyclecount'] = 0;
                 $_SESSION['cycleindex'] = 0;
                 $_SESSION['connectbegin'] = new DateTime();
-                $_SESSION['gps'] = Array('lat'=> 0,'lon'=>0, 'velocity'=>0, 'direction'=>0, 'type' => '');   //纬度
-            
-            //持续心跳  循环次数递增 参数地址恢复
-            }elseif($_SESSION['cycleindex']+1==count($datakeys[$_SESSION['sort']])){
+                $_SESSION['gps'] = array('lat' => 0, 'lon' => 0, 'velocity' => 0, 'direction' => 0, 'type' => '', 'locationdate'=>'');
+                //print_r("===============================");
+                //持续心跳  循环次数递增 参数地址恢复
+            } elseif ($_SESSION['cycleindex'] + 1 == count($datakeys[$_SESSION['sort']])) {
                 $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
                 $_SESSION['cycleindex'] = 0;
+                //print_r("===============================");
             }
             //发送第一笔数据请求
-            GateWay::sendAddr($client_id);
+            //GateWay::sendAddr($client_id);
+            //Dryer GPS包
         }
         //Dryer GPS包
         elseif($head == '$GP')
         {
-            $adata = $data.explode(',');
-            if($adata[0]!='$GPRMC'){
-            }elseif(count($adata)<10){
-            }elseif($adata[2]=='A'){
-                $lat=$adata[3];
-                $fLat=($adata[4]=='N'?1:-1) * (int)substr($lat,0,strlen($lat)-8) + (float)substr($lat,-8) / 60;
-                $lon=$adata[5];
-                $fLon=($adata[6]=='E'?1:-1) * (int)substr($lon,0,strlen($lon)-8) + (float)substr($lon,-8) / 60;
-                $_SESSION['gps']['lat']=$fLat; //纬度
-                $_SESSION['gps']['lon']=$fLon; //经度
-                $_SESSION['gps']['velocity']=(float)$adata[7] * 1.852 / 3.6; //速度 m/s
-                $_SESSION['gps']['direction']=$adata[8]; //方向
-                $_SESSION['gps']['type']=substr($adata[12],1); //定位态别
+            $adata = explode(',', $data);
+            if ($adata[0] != '$GPRMC') { } elseif (count($adata) < 12) { } elseif ($adata[2] == 'A') {
+                $lat = $adata[3];
+                $fLat = ($adata[4] == 'N' ? 1 : -1) * (int) substr($lat, 0, strlen($lat) - 8) + (float) substr($lat, -8) / 60;
+                $lon = $adata[5];
+                $fLon = ($adata[6] == 'E' ? 1 : -1) * (int) substr($lon, 0, strlen($lon) - 8) + (float) substr($lon, -8) / 60;
+                $type = substr($adata[12], 1);
+
+                $_SESSION['gps']['lat'] = $fLat; //纬度
+                $_SESSION['gps']['lon'] = $fLon; //经度
+                $_SESSION['gps']['velocity'] = (float) $adata[7] * 1.852 / 3.6; //速度 m/s
+                $_SESSION['gps']['direction'] = $adata[8]; //方向
+                $_SESSION['gps']['type'] = substr($adata[12], 1); //定位态别
+                $_SESSION['gps']['date'] = new DateTime(); //定位时间
             }
         }
         //Dryer 数据
@@ -161,12 +170,17 @@ class Events
     }
 
     //发送数据地址
-    public static function sendAddr($client_id)
+    public static function sendRecordAddr()
     {
         global $dataaddr;
         global $datakeys;
-        if($_SESSION['cycleindex']<count($datakeys[$_SESSION['sort']])){
-            $hexs=$addaddr[$_SESSION['sort']][$datakeys[$_SESSION['cycleindex']]];
+        var_dump($_SESSION['sort']);
+        if(array_key_exists('cycleindex',$_SESSION) 
+        && array_key_exists('sort',$_SESSION) 
+        && array_key_exists($_SESSION['sort'],$datakeys) 
+        && $_SESSION['cycleindex']<count($datakeys[$_SESSION['sort']])){
+            $client_id = $_SESSION['clientid'];
+            $hexs=$dataaddr[$_SESSION['sort']][$datakeys[$_SESSION['cycleindex']]];
             GateWay::sendToClient($client_id,pack('C*', $_SESSION['addr'],0x03,
                                                         hex2bin(substr($hexs,0,2)),
                                                         hex2bin(substr($hexs,2,2)),
@@ -176,7 +190,7 @@ class Events
                                                         hex2bin(substr($hexs,10,2)) ));
         }
     }
-    public static function saveStatus($client_id)
+    public static function saveRecord()
     {
         global $dataaddr;
         global $datakeys;
@@ -189,7 +203,7 @@ class Events
             }
         }
     }
-    public static function saveCycle($client_id)
+    public static function saveCycle()
     {
         global $dataaddr;
         global $datakeys;
