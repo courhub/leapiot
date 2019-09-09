@@ -109,6 +109,7 @@ class Events
         $amsg = unpack("a*", $message);
         $data = join($amsg);
         $head = substr($data, 0, 3);
+        $hexa = unpack("H6h/H4d/H4c",$message);
         //Dryer 心跳包
         if ($head == '$$$') {
             $_SESSION['now'] = new DateTime();
@@ -153,12 +154,20 @@ class Events
             }
         }
         //Dryer 数据
-        elseif ($data[0] == 0x01 && $data[1] == 0x03 && $data[2] == 0x02) {
-            $_SESSION['data'][$datakeys[$_SESSION['sort']][$_SESSION['cycleindex']]] = $data[3] * 64 + $data[3];
-            $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
-            Events::sendRecordAddr($client_id);
-            Events::saveStatus($client_id);
-            Events::saveCycle($client_id);
+        elseif ($hexa['h'] == '010302') {
+            $crc16 = CrcTool::crc16(pack("H*",$hexa['h'].$hexa['d']));
+            if(unpack("H4s",$crc16)['s'] == $hexa['c']){
+                $_SESSION['record'][$datakeys[$_SESSION['sort']][$_SESSION['cycleindex']]] = unpack("s1int",pack("H*",$hexa['d']))['int'];
+                $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
+            }
+            //Events::sendRecordAddr($client_id);
+            //Events::saveStatus($client_id);
+            //Events::saveCycle($client_id);
+            var_dump($hexa);
+            var_dump(unpack("H4s",$crc16)['s']);
+            print_r("++++++++++++++++++++++");   
+            var_dump($data);
+
             //平台
         } elseif ($data[0] == 0x5A && $data[1] == 0xA5) { }
     }
@@ -185,14 +194,14 @@ class Events
             && array_key_exists($_SESSION['sort'], $datakeys)
             && $_SESSION['cycleindex'] < count($datakeys[$_SESSION['sort']])
         ) {
-            var_dump($_SESSION['cycleindex']);
+            //var_dump($_SESSION['cycleindex']);
             $hexs = substr('0'.dechex($_SESSION['addr']),-2).'03'.$dataaddr[$_SESSION['sort']][$datakeys[$_SESSION['sort']][$_SESSION['cycleindex']]].'0001';
             $crc16 = CrcTool::crc16(pack("H*",$hexs));
             $sendAddr = $hexs.unpack("H4s",$crc16)['s'];
-            print_r('==================');
-            var_dump($sendAddr);
+            //print_r('==================');
+            //var_dump($sendAddr);
             //GateWay::sendToClient($client_id, $sendAddr);
-            $_SESSION['cycleindex'] += 1;
+            //$_SESSION['cycleindex'] += 1;
             
         }
     }

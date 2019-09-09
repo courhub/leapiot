@@ -23,8 +23,8 @@ use \Workerman\Worker;
  *      'hotairtmp'         => '01030016000165CE',
  *      'outsidetmp'        => '010300170001340E',
  *      'operatinghour1'    => '0103001C000145CC',
- *      'operatinghour2'    => '0103001D000114OC',  e
- *      'fullloaded'        => '010300210001D400',  e
+ *      'operatinghour2'    => '0103001D000114OC',
+ *      'fullloaded'        => '010300210001D400',
  *      'hotairtmptarget'   => '01030025000195C1',
  *      'timersetting'      => '0103002E0001E403',
  *      'error12'           => '010300640001C5D5',
@@ -62,6 +62,11 @@ $message = "$$$0001";
 //設備數據地址  format=H2h1/H2h2/H2h3
 //$message = '010300640001C5D5';
 //$message = pack("H*",$message);
+
+//設備數據      format=H6a/H4d/H4c
+$message = '0103020000B844';
+$message = '010302FFFFB9F4';
+$message = pack("H*",$message);
 
 //GPS   format=a*
 //$message = '$GPRMC,225530.000,A,3637.26040,N,11700.56340,E,10.000,97.17,220512,,,D*57';
