@@ -23,8 +23,8 @@ use \Workerman\Worker;
  *      'hotairtmp'         => '01030016000165CE',
  *      'outsidetmp'        => '010300170001340E',
  *      'operatinghour1'    => '0103001C000145CC',
- *      'operatinghour2'    => '0103001D000114O0',
- *      'fullloaded'        => '01030021000115C9',
+ *      'operatinghour2'    => '0103001D000114OC',  e
+ *      'fullloaded'        => '010300210001D400',  e
  *      'hotairtmptarget'   => '01030025000195C1',
  *      'timersetting'      => '0103002E0001E403',
  *      'error12'           => '010300640001C5D5',
@@ -76,7 +76,7 @@ $client_id = 'FFFF0001CCCC0001';
 //$eid = substr($data, 3, 4);
 //var_dump(array($amsg,$data, $head, $eid));
 
-Events::onConnect($client_id);
+//Events::onConnect($client_id);
 Events::onMessage($client_id, $message);
 //Events::onClose($client_id);
 //Events::sendRecordAddr();

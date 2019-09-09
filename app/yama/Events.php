@@ -125,7 +125,7 @@ class Events
                 $_SESSION['gps'] = array('lat' => 0, 'lon' => 0, 'velocity' => 0, 'direction' => 0, 'type' => '', 'locationdate' => '');
                 //print_r("===============================");
                 //持续心跳  循环次数递增 参数地址恢复
-            } elseif ($_SESSION['cycleindex'] + 1 == count($datakeys[$_SESSION['sort']])) {
+            } elseif ($_SESSION['cycleindex'] >= count($datakeys[$_SESSION['sort']])) {
                 $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
                 $_SESSION['cycleindex'] = 0;
                 //print_r("===============================");
@@ -148,7 +148,7 @@ class Events
                 $_SESSION['gps']['lon'] = $fLon; //经度
                 $_SESSION['gps']['velocity'] = (float) $adata[7] * 1.852 / 3.6; //速度 m/s
                 $_SESSION['gps']['direction'] = $adata[8]; //方向
-                $_SESSION['gps']['type'] = substr($adata[12], 0, 1); //定位态别
+                $_SESSION['gps']['type'] = $type; //定位态别
                 $_SESSION['gps']['cdate'] = new DateTime(); //定位时间
             }
         }
@@ -185,19 +185,15 @@ class Events
             && array_key_exists($_SESSION['sort'], $datakeys)
             && $_SESSION['cycleindex'] < count($datakeys[$_SESSION['sort']])
         ) {
-            $client_id = $_SESSION['clientid'];
-            $cycleindex = 2;//$_SESSION['cycleindex'];
-            $session = $_SESSION;
-            $session['cycleindex'] = $session['cycleindex'] + 3;
-            $_SESSION = $session;
-            //$_SESSION = 1;
-            
-            var_dump($_SESSION);
-            $hexs = substr('0'.dechex($_SESSION['addr']),-2).'03'.$dataaddr[$_SESSION['sort']][$datakeys[$_SESSION['sort']][$cycleindex]].'0001';
+            var_dump($_SESSION['cycleindex']);
+            $hexs = substr('0'.dechex($_SESSION['addr']),-2).'03'.$dataaddr[$_SESSION['sort']][$datakeys[$_SESSION['sort']][$_SESSION['cycleindex']]].'0001';
             $crc16 = CrcTool::crc16(pack("H*",$hexs));
+            $sendAddr = $hexs.unpack("H4s",$crc16)['s'];
             print_r('==================');
-            var_dump($hexs.'+'.unpack("H4s",$crc16)['s']);
-            GateWay::sendToClient($client_id, pack("H*", $hexs.unpack("H*",$crc16)));
+            var_dump($sendAddr);
+            //GateWay::sendToClient($client_id, $sendAddr);
+            $_SESSION['cycleindex'] += 1;
+            
         }
     }
     public static function saveRecord()
