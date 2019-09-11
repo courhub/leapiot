@@ -103,6 +103,11 @@ class Events
     {
         global $dataaddr;
         global $datakeys;
+        if(! array_key_exists('sort',$_SESSION)){
+            Events::onConnect($client_id);
+        }
+        
+
         // 向所有人发送
         //Gateway::sendToAll("$client_id said $message\r\n");
         //解包数据
@@ -110,6 +115,7 @@ class Events
         $data = join($amsg);
         $head = substr($data, 0, 3);
         $hexa = unpack("H6h/H4d/H4c",$message);
+        
         //Dryer 心跳包
         if ($head == '$$$') {
             $_SESSION['now'] = new DateTime();

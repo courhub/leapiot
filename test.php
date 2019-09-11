@@ -65,8 +65,8 @@ $message = "$$$0001";
 
 //設備數據      format=H6a/H4d/H4c
 $message = '0103020000B844';
-$message = '010302FFFFB9F4';
-$message = pack("H*",$message);
+//$message = '010302FFFFB9F4';
+//$message = pack("H*",$message);
 
 //GPS   format=a*
 //$message = '$GPRMC,225530.000,A,3637.26040,N,11700.56340,E,10.000,97.17,220512,,,D*57';
@@ -81,6 +81,7 @@ $client_id = 'FFFF0001CCCC0001';
 //$eid = substr($data, 3, 4);
 //var_dump(array($amsg,$data, $head, $eid));
 
+Events::linkDb();
 //Events::onConnect($client_id);
 Events::onMessage($client_id, $message);
 //Events::onClose($client_id);
