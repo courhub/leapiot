@@ -70,6 +70,22 @@ class Events
     {
         global $db;
         $db = new \Workerman\MySQL\Connection('localhost', '3306', 'root', '', 'yamamoto');
+        $all_tables = $db->query('show tables');
+        //查詢
+        var_dump($all_tables);
+        $rows = $db->select('*')->from('ym_para')->where('flag= :flag')->bindValues(array('flag' => 1))->query();
+        var_dump($rows);
+        $row = $db->select('*')->from('ym_para')->where('flag= :flag')->bindValues(array('flag' => 1))->row();
+        var_dump($row);
+        
+        //插入
+        //$insert_id = $db->insert('ym_para')->cols(array('name'=>'', 'sort'=>'', 'key'=>''))->query();
+        //更新
+        //$row_count = $db->update('ym_para')->cols(array('name'))->where('ID=1')->bindValue('name','NAMES')->
+        //json
+        //$json = $db->query('SELECT "{\"a\": 1, \"b\": {\"c\": 30}}"');
+        //var_dump($json);
+        var_dump(md5('yama'.'LEAPIOT'));
     }
     /**
      * 当客户端连接时触发
@@ -85,7 +101,7 @@ class Events
         // Gateway::sendToAll("$client_id login\r\n");
         // session_destroy();
         // session_start();
-        $_SESSION['id'] = '';
+        $_SESSION['id'] = 0;
         $_SESSION['clientid'] = $client_id;
         $_SESSION['sort'] = '';
         $_SESSION['cycleindex'] = 0;
@@ -103,10 +119,10 @@ class Events
     {
         global $dataaddr;
         global $datakeys;
-        if(! array_key_exists('sort',$_SESSION)){
+        if (!array_key_exists('sort', $_SESSION)) {
             Events::onConnect($client_id);
         }
-        
+
 
         // 向所有人发送
         //Gateway::sendToAll("$client_id said $message\r\n");
@@ -114,8 +130,8 @@ class Events
         $amsg = unpack("a*", $message);
         $data = join($amsg);
         $head = substr($data, 0, 3);
-        $hexa = unpack("H6h/H4d/H4c",$message);
-        
+        $hexa = unpack("H6h/H4d/H4c", $message);
+
         //Dryer 心跳包
         if ($head == '$$$') {
             $_SESSION['now'] = new DateTime();
@@ -161,17 +177,17 @@ class Events
         }
         //Dryer 数据
         elseif ($hexa['h'] == '010302') {
-            $crc16 = CrcTool::crc16(pack("H*",$hexa['h'].$hexa['d']));
-            if(unpack("H4s",$crc16)['s'] == $hexa['c']){
-                $_SESSION['record'][$datakeys[$_SESSION['sort']][$_SESSION['cycleindex']]] = unpack("s1int",pack("H*",$hexa['d']))['int'];
+            $crc16 = CrcTool::crc16(pack("H*", $hexa['h'] . $hexa['d']));
+            if (unpack("H4s", $crc16)['s'] == $hexa['c']) {
+                $_SESSION['record'][$datakeys[$_SESSION['sort']][$_SESSION['cycleindex']]] = unpack("s1int", pack("H*", $hexa['d']))['int'];
                 $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
             }
             //Events::sendRecordAddr($client_id);
             //Events::saveStatus($client_id);
             //Events::saveCycle($client_id);
             var_dump($hexa);
-            var_dump(unpack("H4s",$crc16)['s']);
-            print_r("++++++++++++++++++++++");   
+            var_dump(unpack("H4s", $crc16)['s']);
+            print_r("++++++++++++++++++++++");
             var_dump($data);
 
             //平台
@@ -201,14 +217,14 @@ class Events
             && $_SESSION['cycleindex'] < count($datakeys[$_SESSION['sort']])
         ) {
             //var_dump($_SESSION['cycleindex']);
-            $hexs = substr('0'.dechex($_SESSION['addr']),-2).'03'.$dataaddr[$_SESSION['sort']][$datakeys[$_SESSION['sort']][$_SESSION['cycleindex']]].'0001';
-            $crc16 = CrcTool::crc16(pack("H*",$hexs));
-            $sendAddr = $hexs.unpack("H4s",$crc16)['s'];
+            $hexs = substr('0' . dechex($_SESSION['addr']), -2) . '03' . $dataaddr[$_SESSION['sort']][$datakeys[$_SESSION['sort']][$_SESSION['cycleindex']]] . '0001';
+            $crc16 = CrcTool::crc16(pack("H*", $hexs));
+            $sendAddr = $hexs . unpack("H4s", $crc16)['s'];
             //print_r('==================');
             //var_dump($sendAddr);
             //GateWay::sendToClient($client_id, $sendAddr);
             //$_SESSION['cycleindex'] += 1;
-            
+
         }
     }
     public static function saveRecord()
