@@ -30,7 +30,7 @@ use \Workerman\Worker;
 global $dataaddr;
 global $datakeys;
 $dataaddr = array('dryer' => array(
-    'operation'         => '0000',
+    'operating'         => '0000',
     'abnormal'          => '0001',
     'operatingtype'     => '000B',
     'grainsortmp'       => '000C',
@@ -70,14 +70,14 @@ class Events
     {
         global $db;
         $db = new \Workerman\MySQL\Connection('localhost', '3306', 'root', '', 'yamamoto');
-        $all_tables = $db->query('show tables');
+        //$all_tables = $db->query('show tables');
         //查詢
-        var_dump($all_tables);
-        $rows = $db->select('*')->from('ym_para')->where('flag= :flag')->bindValues(array('flag' => 1))->query();
-        var_dump($rows);
-        $row = $db->select('*')->from('ym_para')->where('flag= :flag')->bindValues(array('flag' => 1))->row();
-        var_dump($row);
-        
+        //var_dump($all_tables);
+        //$rows = $db->select('*')->from('ym_para')->where('flag= :flag')->bindValues(array('flag' => 1))->query();
+        //var_dump($rows);
+        //$row = $db->select('*')->from('ym_para')->where('flag= :flag')->bindValues(array('flag' => 1))->row();
+        //var_dump($row);
+
         //插入
         //$insert_id = $db->insert('ym_para')->cols(array('name'=>'', 'sort'=>'', 'key'=>''))->query();
         //更新
@@ -85,7 +85,8 @@ class Events
         //json
         //$json = $db->query('SELECT "{\"a\": 1, \"b\": {\"c\": 30}}"');
         //var_dump($json);
-        var_dump(md5('yama'.'LEAPIOT'));
+        //select coalesce(null,2,3)
+        //var_dump(md5('yama' . 'LEAPIOT'));
     }
     /**
      * 当客户端连接时触发
@@ -127,18 +128,18 @@ class Events
         // 向所有人发送
         //Gateway::sendToAll("$client_id said $message\r\n");
         //解包数据
-        $amsg = unpack("a*", $message);
-        $data = join($amsg);
-        $head = substr($data, 0, 3);
-        $hexa = unpack("H6h/H4d/H4c", $message);
+        $amsg = unpack("a*", $message);             //字符數組
+        $data = join($amsg);                        //字符串
+        $head = substr($data, 0, 3);                //前三個字母
+        $hexa = unpack("H6h/H4d/H4c", $message);    //十六進制字符串數組
 
-        //Dryer 心跳包
+        //Dryer 心跳包  $$$0001 '字符串+PSN
         if ($head == '$$$') {
             $_SESSION['now'] = new DateTime();
-            $eid = substr($data, 3, 4);
+            $psn = substr($data, 3, 4);
             //第一次心跳 初始化设备参数
             if (!$_SESSION['sort']) {
-                $_SESSION['eid'] = $eid;
+                $_SESSION['psn'] = $psn;
                 $_SESSION['sort'] = 'dryer';
                 $_SESSION['addr'] = 1;
                 $_SESSION['record'] = array_fill_keys($datakeys['dryer'], '');
@@ -154,8 +155,7 @@ class Events
                 //print_r("===============================");
             }
             //发送第一笔数据请求
-            Events::sendRecordAddr($client_id);
-            //Dryer GPS包
+            //Events::sendRecordAddr($client_id);
         }
         //Dryer GPS包
         elseif ($head == '$GP') {
@@ -189,9 +189,9 @@ class Events
             var_dump(unpack("H4s", $crc16)['s']);
             print_r("++++++++++++++++++++++");
             var_dump($data);
-
-            //平台
-        } elseif ($data[0] == 0x5A && $data[1] == 0xA5) { }
+        }
+        //平台
+        elseif ($hexa['h'] == 0x5A && $data[1] == 0xA5) { }
     }
 
     /**
@@ -205,7 +205,7 @@ class Events
     }
 
     //发送数据地址
-    public static function sendRecordAddr()
+    public static function sendRecordAddr($client_id)
     {
         global $dataaddr;
         global $datakeys;
@@ -233,8 +233,19 @@ class Events
         global $datakeys;
         global $db;
         if ($_SESSION['cycleindex'] + 1 > count($datakeys[$_SESSION['sort']])) {
-            //每十次心跳保存一次cycle
-            if ($_SESSION['cyclecount'] % 10 == 9) { }
+            //每十次心跳保存一次record
+            if ($_SESSION['cyclecount'] % 10 == 9) {
+                $insert_id = 0;
+                $db->beginTrans();
+                if ($_SESSION['lastrecord'] > 0) {
+                    $db->update('ym_record')->cols(array('tdate' => ''))->where('id = 0' . $_SESSION['lastrecord'])->query();
+                }
+                $insert_id = $db->insert('ym_record')->cols(array('entity' => $_SESSION['id'], 'operating' => $_SESSION['record']['operating'], 'fdate' => ''))->query();
+                $db->commitTrans();
+                if ($insert_id > 0) {
+                    $_SESSION['lastrecord'] = $insert_id;
+                }
+            }
         }
     }
     public static function saveCycle()
