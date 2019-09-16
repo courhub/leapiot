@@ -87,5 +87,5 @@ Events::onMessage($client_id, $message);
 //Events::onClose($client_id);
 //Events::sendRecordAddr();
 //$dt = new DateTime();
-var_dump($_SESSION['now']->format('Y-m-d H:i:s.S'));
+//var_dump($_SESSION['now']->format('Y-m-d H:i:s.S'));
 var_dump($_SESSION);

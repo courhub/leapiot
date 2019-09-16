@@ -26,9 +26,11 @@ date_default_timezone_set('Asia/Shanghai');
 
 use \GatewayWorker\Lib\Gateway;
 use \Workerman\Worker;
+use \Workerman\Connection\TcpConnection;
+use \Workerman\Connection\AsyncTcpConnection;
 
-global $dataaddr;
-global $datakeys;
+$db = null; //database
+$sv = null; //conntoserver
 $dataaddr = array('dryer' => array(
     'operating'         => '0000',
     'abnormal'          => '0001',
@@ -63,10 +65,11 @@ class Events
 {
     public static function onWorkerStart($businessWorker)
     {
-        Events::linkDb();
+        Events::connDatabase();
+        Events::connServer();
     }
 
-    public static function linkDb()
+    public static function connDatabase()
     {
         global $db;
         $db = new \Workerman\MySQL\Connection('localhost', '3306', 'root', '', 'yamamoto');
@@ -87,6 +90,18 @@ class Events
         //var_dump($json);
         //select coalesce(null,2,3)
         //var_dump(md5('yama' . 'LEAPIOT'));
+    }
+    public static function connServer()
+    {
+        global $sv;
+        //異步链接远端TCP服务器
+        $sv = new AsyncTcpConnection('');
+        $sv->onMessage = function($sv, $msg){
+            //$sv->send('');
+        };
+        $sv->onClose = function($sv){
+            $sv->reConnect(1);
+        };
     }
     /**
      * 当客户端连接时触发
