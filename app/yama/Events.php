@@ -56,6 +56,7 @@ $dataaddr = array('dryer' => array(
     'model'             => '0078'
 ));
 $datakeys = array('dryer' => array_keys($dataaddr['dryer']));
+
 /**
  * 主逻辑
  * 主要是处理 onConnect onMessage onClose 三个方法
@@ -96,10 +97,10 @@ class Events
         global $sv;
         //異步链接远端TCP服务器
         $sv = new AsyncTcpConnection('');
-        $sv->onMessage = function($sv, $msg){
+        $sv->onMessage = function ($sv, $msg) {
             //$sv->send('');
         };
-        $sv->onClose = function($sv){
+        $sv->onClose = function ($sv) {
             $sv->reConnect(1);
         };
     }
@@ -161,7 +162,9 @@ class Events
                 $_SESSION['cyclecount'] = 0;
                 $_SESSION['cycleindex'] = 0;
                 $_SESSION['connectbegin'] = new DateTime();
-                $_SESSION['gps'] = array('lat' => 0, 'lon' => 0, 'velocity' => 0, 'direction' => 0, 'type' => '', 'locationdate' => '');
+                if (!array_key_exists('gps', $_SESSION)) {
+                    $_SESSION['gps'] = array('lat' => 0, 'lon' => 0, 'velocity' => 0, 'direction' => 0, 'type' => '', 'locationdate' => '');
+                }
                 //print_r("===============================");
                 //持续心跳  循环次数递增 参数地址恢复
             } elseif ($_SESSION['cycleindex'] >= count($datakeys[$_SESSION['sort']])) {
@@ -197,9 +200,9 @@ class Events
                 $_SESSION['record'][$datakeys[$_SESSION['sort']][$_SESSION['cycleindex']]] = unpack("s1int", pack("H*", $hexa['d']))['int'];
                 $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
             }
-            //Events::sendRecordAddr($client_id);
-            //Events::saveStatus($client_id);
-            //Events::saveCycle($client_id);
+            Events::sendRecordAddr($client_id);
+            Events::saveRecord($client_id);
+            Events::saveCycle($client_id);
             var_dump($hexa);
             var_dump(unpack("H4s", $crc16)['s']);
             print_r("++++++++++++++++++++++");
@@ -216,7 +219,9 @@ class Events
     public static function onClose($client_id)
     {
         // 向所有人发送 
-        GateWay::sendToAll("$client_id logout\r\n");
+        //GateWay::sendToAll("$client_id logout\r\n");
+        
+        
     }
 
     //发送数据地址
@@ -224,7 +229,6 @@ class Events
     {
         global $dataaddr;
         global $datakeys;
-        var_dump($dataaddr);
         if (
             array_key_exists('cycleindex', $_SESSION)
             && array_key_exists('sort', $_SESSION)
@@ -236,26 +240,35 @@ class Events
             $crc16 = CrcTool::crc16(pack("H*", $hexs));
             $sendAddr = $hexs . unpack("H4s", $crc16)['s'];
             //print_r('==================');
-            //var_dump($sendAddr);
+            var_dump($sendAddr.$client_id);
             //GateWay::sendToClient($client_id, $sendAddr);
-            //$_SESSION['cycleindex'] += 1;
+            $_SESSION['cycleindex'] += 1;
 
         }
     }
     public static function saveRecord()
     {
-        global $dataaddr;
         global $datakeys;
         global $db;
         if ($_SESSION['cycleindex'] + 1 > count($datakeys[$_SESSION['sort']])) {
-            //每十次心跳保存一次record
+            //每十次心跳保存一次record in 600s=10min
             if ($_SESSION['cyclecount'] % 10 == 9) {
                 $insert_id = 0;
+                $dt = (new DateTime())->format('Y-m-d H:i:s');
+                $record = $_SESSION['record'];
+                $record['operatinghour'] = $record['operatinghour1']*65536/3600 + $record['operatinghour2']/3600;
+                unset($record['operatinghour1']);
+                unset($record['operatinghour2']);
+                $record['operatedhour'] = $record['operatedhour1']*10000 + $record['operatedhour2'];
+                unset($record['operatedhour1']);
+                unset($record['operatedhour2']);
+                $record['timersetting'] = $record['timersetting']*10;
+                $para = json_encode($record);
                 $db->beginTrans();
                 if ($_SESSION['lastrecord'] > 0) {
-                    $db->update('ym_record')->cols(array('tdate' => ''))->where('id = 0' . $_SESSION['lastrecord'])->query();
+                    $db->update('ym_record')->cols(array('tdate' => $dt))->where('id = 0' . $_SESSION['lastrecord'])->query();
                 }
-                $insert_id = $db->insert('ym_record')->cols(array('entity' => $_SESSION['id'], 'operating' => $_SESSION['record']['operating'], 'fdate' => ''))->query();
+                $insert_id = $db->insert('ym_record')->cols(array('entity' => $_SESSION['id'], 'operating' => $_SESSION['record']['operating'], 'fdate' => $dt, 'para' => $para ))->query();
                 $db->commitTrans();
                 if ($insert_id > 0) {
                     $_SESSION['lastrecord'] = $insert_id;

@@ -80,12 +80,15 @@ $client_id = 'FFFF0001CCCC0001';
 //$head = substr($data, 0, 3);
 //$eid = substr($data, 3, 4);
 //var_dump(array($amsg,$data, $head, $eid));
-
 Events::connDatabase();
-//Events::onConnect($client_id);
-Events::onMessage($client_id, $message);
+////Events::onConnect($client_id);
+//Events::onMessage($client_id, $message);
 //Events::onClose($client_id);
 //Events::sendRecordAddr();
 //$dt = new DateTime();
 //var_dump($_SESSION['now']->format('Y-m-d H:i:s.S'));
 var_dump($_SESSION);
+$record = $_SESSION['record'];
+
+$para = json_encode($record);
+var_dump($para);
