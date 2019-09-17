@@ -51,8 +51,8 @@ $dataaddr = array('dryer' => array(
     'timersetting'      => '002E',
     'error12'           => '0064',
     'error34'           => '0065',
-    'operatedhour1'     => '006E',
-    'operatedhour2'     => '006F',
+    'operatedhour2'     => '006E',
+    'operatedhour1'     => '006F',
     'model'             => '0078'
 ));
 $datakeys = array('dryer' => array_keys($dataaddr['dryer']));
@@ -149,7 +149,7 @@ class Events
         $head = substr($data, 0, 3);                //前三個字母
         $hexa = unpack("H6h/H4d/H4c", $message);    //十六進制字符串數組
 
-        //Dryer 心跳包  $$$0001 '字符串+PSN
+        //Dryer 心跳包  $$$0001 '字符串+PSN+PWD
         if ($head == '$$$') {
             $_SESSION['now'] = new DateTime();
             $psn = substr($data, 3, 4);
@@ -255,15 +255,8 @@ class Events
             if ($_SESSION['cyclecount'] % 10 == 9) {
                 $insert_id = 0;
                 $dt = (new DateTime())->format('Y-m-d H:i:s');
-                $record = $_SESSION['record'];
-                $record['operatinghour'] = $record['operatinghour1']*65536/3600 + $record['operatinghour2']/3600;
-                unset($record['operatinghour1']);
-                unset($record['operatinghour2']);
-                $record['operatedhour'] = $record['operatedhour1']*10000 + $record['operatedhour2'];
-                unset($record['operatedhour1']);
-                unset($record['operatedhour2']);
-                $record['timersetting'] = $record['timersetting']*10;
-                $para = json_encode($record);
+                $para = json_encode(Events::dbRecordFmt($_SESSION['record']));
+
                 $db->beginTrans();
                 if ($_SESSION['lastrecord'] > 0) {
                     $db->update('ym_record')->cols(array('tdate' => $dt))->where('id = 0' . $_SESSION['lastrecord'])->query();
@@ -281,6 +274,39 @@ class Events
         global $dataaddr;
         global $datakeys;
         global $db;
+    }
+
+    public static function dbRecordFmt($data)
+    {
+        $record = $data;
+        $record['targetmst'] = $record['targetmst']>0?($record['targetmst']/10):$record['targetmst'];
+        $record['mstcorrection'] = $record['mstcorrection']/10;
+        $record['currentmst'] = $record['currentmst']/10;
+        $record['mstvar'] = $record['mstvar']/100;
+        $record['operatinghour'] = ($record['operatinghour1'] + $record['operatinghour2'])/3600;
+        unset($record['operatinghour1']);
+        unset($record['operatinghour2']);
+        $record['operatedhour'] = $record['operatedhour1']*10000 + $record['operatedhour2'];
+        unset($record['operatedhour1']);
+        unset($record['operatedhour2']);
+        $record['timersetting'] = $record['timersetting']*10;
+        return $record;
+    }
+    public static function svRecordFmt($data)
+    {
+        $record = $data;
+        $record['targetmst'] = $record['targetmst']>0?($record['targetmst']/10):$record['targetmst'];
+        $record['mstcorrection'] = $record['mstcorrection']/10;
+        $record['currentmst'] = $record['currentmst']/10;
+        $record['mstvar'] = $record['mstvar']/100;
+        $record['operatinghour'] = $record['operatinghour1']*65536/3600 + $record['operatinghour2']/3600;
+        unset($record['operatinghour1']);
+        unset($record['operatinghour2']);
+        $record['operatedhour'] = $record['operatedhour1']*10000 + $record['operatedhour2'];
+        unset($record['operatedhour1']);
+        unset($record['operatedhour2']);
+        $record['timersetting'] = $record['timersetting']*10;
+        return $record;
     }
 }
 
