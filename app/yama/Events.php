@@ -31,7 +31,7 @@ use \Workerman\Connection\AsyncTcpConnection;
 
 $db = null; //database
 $sv = null; //conntoserver
-$dataaddr = array('dryer' => array(
+$dataaddr = array(1 => array(
     'operating'         => '0000',
     'abnormal'          => '0001',
     'operatingtype'     => '000B',
@@ -55,7 +55,7 @@ $dataaddr = array('dryer' => array(
     'operatedhour1'     => '006F',
     'model'             => '0078'
 ));
-$datakeys = array('dryer' => array_keys($dataaddr['dryer']));
+$datakeys = array(1 => array_keys($dataaddr[1]));
 
 /**
  * 主逻辑
@@ -120,8 +120,8 @@ class Events
         // session_start();
         $_SESSION['id'] = 0;
         $_SESSION['clientid'] = $client_id;
-        $_SESSION['sort'] = '';
-        $_SESSION['cycleindex'] = 0;
+        $_SESSION['sort'] = 0;
+        $_SESSION['recordindex'] = 0;
         $_SESSION['cyclecount'] = 0;
         $_SESSION['connectbegin'] = new DateTime();
         $_SESSION['connectend'] = '';
@@ -136,6 +136,7 @@ class Events
     {
         global $dataaddr;
         global $datakeys;
+        global $db;
         if (!array_key_exists('sort', $_SESSION)) {
             Events::onConnect($client_id);
         }
@@ -149,27 +150,46 @@ class Events
         $head = substr($data, 0, 3);                //前三個字母
         $hexa = unpack("H6h/H4d/H4c", $message);    //十六進制字符串數組
 
-        //Dryer 心跳包  $$$0001 '字符串+PSN+PWD
-        if ($head == '$$$') {
+        //Dryer 註冊包  @@@00017162485b30dbe2644067b6ebc5ebe0af 字符串+PSN+PWD
+        if ($head == '@@@') {
+            print_r("+++++++++++++++++++");
             $_SESSION['now'] = new DateTime();
             $psn = substr($data, 3, 4);
-            //第一次心跳 初始化设备参数
-            if (!$_SESSION['sort']) {
-                $_SESSION['psn'] = $psn;
-                $_SESSION['sort'] = 'dryer';
-                $_SESSION['addr'] = 1;
+            $pwd = substr($data, 5);
+            $entity = $db   ->select('id,sort,psn,addr')
+                            ->from('ym_entity')
+                            ->where('flag= :flag and psn= :psn and pwd= :pwd')
+                            ->bindValues(array('flag' => 1,'psn'=>$psn,'pwd'=>$pwd))
+                            ->row();
+            if($entity){
+                //登入，初始化session參數
+                $_SESSION['id'] = $entity['id'];
+                $_SESSION['psn'] = $entity['psn'];
+                $_SESSION['sort'] = $entity['sort'];
+                $_SESSION['addr'] = $entity['addr'];
                 $_SESSION['record'] = array_fill_keys($datakeys['dryer'], '');
                 $_SESSION['cyclecount'] = 0;
-                $_SESSION['cycleindex'] = 0;
+                $_SESSION['recordindex'] = 0;
                 $_SESSION['connectbegin'] = new DateTime();
+                $_SESSION['cyclebegintime'] = new DateTime();
+                $_SESSION['recordbegintime'] = new DateTime();
                 if (!array_key_exists('gps', $_SESSION)) {
                     $_SESSION['gps'] = array('lat' => 0, 'lon' => 0, 'velocity' => 0, 'direction' => 0, 'type' => '', 'locationdate' => '');
                 }
-                //print_r("===============================");
-                //持续心跳  循环次数递增 参数地址恢复
-            } elseif ($_SESSION['cycleindex'] >= count($datakeys[$_SESSION['sort']])) {
+                var_dump($entity);
+            }else{
+                //登出
+                session_destroy();
+                //Gateway::destoryCurrentClient();
+            }
+        }
+        //Dryer 心跳包  $$$0001 '字符串+PSN
+        elseif ($head == '$$$') {
+            if ($_SESSION['recordindex'] >= count($datakeys[$_SESSION['sort']])) {
+                $_SESSION['lastcycletime'] = new DateTime();
+                $_SESSION['lastrecordtime'] = new DateTime();
                 $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
-                $_SESSION['cycleindex'] = 0;
+                $_SESSION['recordindex'] = 0;
                 //print_r("===============================");
             }
             //发送第一笔数据请求
@@ -197,7 +217,7 @@ class Events
         elseif ($hexa['h'] == '010302') {
             $crc16 = CrcTool::crc16(pack("H*", $hexa['h'] . $hexa['d']));
             if (unpack("H4s", $crc16)['s'] == $hexa['c']) {
-                $_SESSION['record'][$datakeys[$_SESSION['sort']][$_SESSION['cycleindex']]] = unpack("s1int", pack("H*", $hexa['d']))['int'];
+                $_SESSION['record'][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] = unpack("s1int", pack("H*", $hexa['d']))['int'];
                 $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
             }
             Events::sendRecordAddr($client_id);
@@ -230,19 +250,19 @@ class Events
         global $dataaddr;
         global $datakeys;
         if (
-            array_key_exists('cycleindex', $_SESSION)
+            array_key_exists('recordindex', $_SESSION)
             && array_key_exists('sort', $_SESSION)
             && array_key_exists($_SESSION['sort'], $datakeys)
-            && $_SESSION['cycleindex'] < count($datakeys[$_SESSION['sort']])
+            && $_SESSION['recordindex'] < count($datakeys[$_SESSION['sort']])
         ) {
-            //var_dump($_SESSION['cycleindex']);
-            $hexs = substr('0' . dechex($_SESSION['addr']), -2) . '03' . $dataaddr[$_SESSION['sort']][$datakeys[$_SESSION['sort']][$_SESSION['cycleindex']]] . '0001';
+            //var_dump($_SESSION['recordindex']);
+            $hexs = substr('0' . dechex($_SESSION['addr']), -2) . '03' . $dataaddr[$_SESSION['sort']][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] . '0001';
             $crc16 = CrcTool::crc16(pack("H*", $hexs));
             $sendAddr = $hexs . unpack("H4s", $crc16)['s'];
             //print_r('==================');
             var_dump($sendAddr.$client_id);
             //GateWay::sendToClient($client_id, $sendAddr);
-            $_SESSION['cycleindex'] += 1;
+            $_SESSION['recordindex'] += 1;
 
         }
     }
@@ -250,7 +270,7 @@ class Events
     {
         global $datakeys;
         global $db;
-        if ($_SESSION['cycleindex'] + 1 > count($datakeys[$_SESSION['sort']])) {
+        if ($_SESSION['recordindex'] + 1 > count($datakeys[$_SESSION['sort']])) {
             //每十次心跳保存一次record in 600s=10min
             if ($_SESSION['cyclecount'] % 10 == 9) {
                 $insert_id = 0;

@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- 主機： 127.0.0.1:3306
--- 產生時間： 2019 年 09 月 14 日 09:04
+-- 產生時間： 2019 年 09 月 18 日 09:58
 -- 伺服器版本： 5.7.26
 -- PHP 版本： 7.2.18
 
@@ -65,14 +65,21 @@ CREATE TABLE IF NOT EXISTS `ym_cycle` (
   `flag` bit(1) NOT NULL DEFAULT b'1',
   PRIMARY KEY (`id`),
   KEY `entity` (`entity`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='设备使用CYCLE记录';
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8 COMMENT='设备使用CYCLE记录';
+
+--
+-- 傾印資料表的資料 `ym_cycle`
+--
+
+INSERT INTO `ym_cycle` (`id`, `entity`, `bdate`, `edate`, `stage`, `type`, `amt`, `unit`, `kind`, `brecord`, `erecord`, `cdate`, `flag`) VALUES
+(1, 1, '2019-09-17 00:00:00', '2019-09-17 10:00:00', 1, 0, '12', 'T', 1, 2, 2, '2019-09-17 11:08:33', b'1');
 
 --
 -- 觸發器 `ym_cycle`
 --
 DROP TRIGGER IF EXISTS `trigger_ym_cycle_after_insert`;
 DELIMITER $$
-CREATE TRIGGER `trigger_ym_cycle_after_insert` AFTER INSERT ON `ym_cycle` FOR EACH ROW update `ym_entiry` set `lastcycle` = new.id where `id`= new.entity
+CREATE TRIGGER `trigger_ym_cycle_after_insert` AFTER INSERT ON `ym_cycle` FOR EACH ROW update `ym_entity` set `lastcycle` = new.id where `id`= new.entity
 $$
 DELIMITER ;
 
@@ -90,8 +97,9 @@ CREATE TABLE IF NOT EXISTS `ym_entity` (
   `org` int(10) UNSIGNED NOT NULL COMMENT '所属组织(org)',
   `status` tinyint(3) UNSIGNED NOT NULL COMMENT '当前状态',
   `csn` varchar(50) NOT NULL COMMENT '客户编号',
-  `psn` varchar(50) NOT NULL COMMENT '厂家编号',
+  `psn` smallint(6) NOT NULL COMMENT '厂家序號',
   `pwd` varchar(50) DEFAULT NULL COMMENT 'psn IOT连接密码',
+  `addr` tinyint(3) UNSIGNED DEFAULT NULL COMMENT 'Modbus Address',
   `spec` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `lastgps` int(10) UNSIGNED NOT NULL DEFAULT '0' COMMENT '最新的gps.id',
   `lastrecord` int(10) UNSIGNED NOT NULL DEFAULT '0' COMMENT '最新的record.id',
@@ -110,8 +118,8 @@ CREATE TABLE IF NOT EXISTS `ym_entity` (
 -- 傾印資料表的資料 `ym_entity`
 --
 
-INSERT INTO `ym_entity` (`id`, `sort`, `model`, `org`, `status`, `csn`, `psn`, `pwd`, `spec`, `lastgps`, `lastrecord`, `lastcycle`, `cdate`, `cuser`, `udate`, `uuser`, `flag`) VALUES
-(1, 1, '120H', 3, 1, 'HGJ001', '00001', '7162485b30dbe2644067b6ebc5ebe0af', '', 0, 0, 0, '2019-09-12 16:15:03', 1, '2019-09-12 16:15:03', 1, b'1');
+INSERT INTO `ym_entity` (`id`, `sort`, `model`, `org`, `status`, `csn`, `psn`, `pwd`, `addr`, `spec`, `lastgps`, `lastrecord`, `lastcycle`, `cdate`, `cuser`, `udate`, `uuser`, `flag`) VALUES
+(1, 1, '120H', 3, 1, 'HGJ001', 1, '7162485b30dbe2644067b6ebc5ebe0af', NULL, '', 1, 2, 1, '2019-09-12 16:15:03', 1, '2019-09-12 16:15:03', 1, b'1');
 
 -- --------------------------------------------------------
 
@@ -131,7 +139,14 @@ CREATE TABLE IF NOT EXISTS `ym_gps` (
   `type` char(1) NOT NULL COMMENT '定位态别:，A=自主定位，D=差分，E=估算，N=数据无效',
   PRIMARY KEY (`id`),
   KEY `entity` (`entity`) USING BTREE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8;
+
+--
+-- 傾印資料表的資料 `ym_gps`
+--
+
+INSERT INTO `ym_gps` (`id`, `entity`, `lon`, `lat`, `velocity`, `direction`, `cdate`, `type`) VALUES
+(1, 1, 31.1111, 116.333, 3, 15, '2019-09-12 11:37:21', 'A');
 
 --
 -- 觸發器 `ym_gps`
@@ -190,7 +205,7 @@ CREATE TABLE IF NOT EXISTS `ym_para` (
   `flag` bit(1) NOT NULL DEFAULT b'1',
   PRIMARY KEY (`id`),
   KEY `sort` (`sort`)
-) ENGINE=InnoDB AUTO_INCREMENT=49 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=58 DEFAULT CHARSET=utf8;
 
 --
 -- 傾印資料表的資料 `ym_para`
@@ -244,7 +259,16 @@ INSERT INTO `ym_para` (`id`, `sort`, `code`, `name`, `note`, `cdate`, `cuser`, `
 (45, 19, 42, 'Discrepancy of the number set in the memory card', '插入记程序编号不统一', '2019-09-13 14:50:52', 1, '2019-09-13 14:50:52', 1, b'1'),
 (46, 19, 43, 'Dip switch setting error', '', '2019-09-13 14:50:52', 1, '2019-09-13 14:50:52', 1, b'1'),
 (47, 19, 45, 'Moisture meter lock error 1', '', '2019-09-13 14:50:52', 1, '2019-09-13 14:50:52', 1, b'1'),
-(48, 19, 46, 'Moisture meter lock error 2', '水分计锁定出错2', '2019-09-13 14:50:52', 1, '2019-09-13 14:50:52', 1, b'1');
+(48, 19, 46, 'Moisture meter lock error 2', '水分计锁定出错2', '2019-09-13 14:50:52', 1, '2019-09-13 14:50:52', 1, b'1'),
+(49, 9, 0, 'Operating with moisture meter', '量测水分为操作条件', '2019-09-17 15:29:34', 1, '2019-09-17 15:29:34', 1, b'1'),
+(50, 9, 4, 'Operating with timer', '计时为操作条件', '2019-09-17 15:30:01', 1, '2019-09-17 15:30:01', 1, b'1'),
+(51, 10, 0, 'paddy', '稻子', '2019-09-17 15:32:07', 1, '2019-09-17 15:32:07', 1, b'1'),
+(52, 10, 1, 'wheat', '麦子', '2019-09-17 15:33:26', 1, '2019-09-17 15:33:26', 1, b'1'),
+(53, 10, 6, 'corn', '玉米', '2019-09-17 15:33:26', 1, '2019-09-17 15:33:26', 1, b'1'),
+(54, 10, 20, 'other', '其他', '2019-09-17 15:33:26', 1, '2019-09-17 15:33:26', 1, b'1'),
+(55, 11, 0, '开始', '', '2019-09-17 15:37:53', 1, '2019-09-17 15:37:53', 1, b'1'),
+(56, 11, 1, '完成', '', '2019-09-17 15:38:24', 1, '2019-09-17 15:38:24', 1, b'1'),
+(57, 11, 2, '未完成', '', '2019-09-17 15:38:24', 1, '2019-09-17 15:38:24', 1, b'1');
 
 -- --------------------------------------------------------
 
@@ -262,14 +286,21 @@ CREATE TABLE IF NOT EXISTS `ym_record` (
   `para` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   PRIMARY KEY (`id`),
   KEY `entity` (`entity`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8;
+
+--
+-- 傾印資料表的資料 `ym_record`
+--
+
+INSERT INTO `ym_record` (`id`, `entity`, `fdate`, `tdate`, `operating`, `para`) VALUES
+(2, 1, '2019-09-17 00:00:00', '2019-09-17 10:00:00', 1, '{\"operating\":1}');
 
 --
 -- 觸發器 `ym_record`
 --
 DROP TRIGGER IF EXISTS `trigger_ym_record_after_insert`;
 DELIMITER $$
-CREATE TRIGGER `trigger_ym_record_after_insert` AFTER INSERT ON `ym_record` FOR EACH ROW update `ym_entiry` set `lastrecord` = new.id where `id`= new.entity
+CREATE TRIGGER `trigger_ym_record_after_insert` AFTER INSERT ON `ym_record` FOR EACH ROW update `ym_entity` set `lastrecord` = new.id where `id`= new.entity
 $$
 DELIMITER ;
 

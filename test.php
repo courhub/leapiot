@@ -54,8 +54,10 @@ use \Workerman\Worker;
  * 2.如果你提供的参数比 $format 要求的少，pack 假设缺的都是空值。如果你提供的参数比 $format 要求的多，那么多余的参数被忽略
  */
 
+//註冊包@@@+ID+PWD
+$message = "@@@00017162485b30dbe2644067b6ebc5ebe0af";
 //心跳包$$$$，及設備ID  format=a*
-$message = "$$$0001";
+//$message = "$$$";
 //$message = unpack("C*",$message);
 //$message = pack("C*",0x64,0x37,0x38,0x04,0x04,0x04,0x04,0x04);
 
@@ -65,8 +67,8 @@ $message = "$$$0001";
 
 //設備數據      format=H6a/H4d/H4c
 //$message = '0103020000B844';
-$message = '010302FFFFB9F4';
-$message = pack("H*",$message);
+//$message = '010302FFFFB9F4';
+//$message = pack("H*",$message);
 
 //GPS   format=a*
 //$message = '$GPRMC,225530.000,A,3637.26040,N,11700.56340,E,10.000,97.17,220512,,,D*57';
@@ -80,15 +82,11 @@ $client_id = 'FFFF0001CCCC0001';
 //$head = substr($data, 0, 3);
 //$eid = substr($data, 3, 4);
 //var_dump(array($amsg,$data, $head, $eid));
-Events::connDatabase();
-////Events::onConnect($client_id);
-//Events::onMessage($client_id, $message);
+//Events::connDatabase();
+//Events::onConnect($client_id);
+Events::onMessage($client_id, $message);
 //Events::onClose($client_id);
 //Events::sendRecordAddr();
 //$dt = new DateTime();
 //var_dump($_SESSION['now']->format('Y-m-d H:i:s.S'));
 var_dump($_SESSION);
-$record = $_SESSION['record'];
-
-$para = json_encode($record);
-var_dump($para);
