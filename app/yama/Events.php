@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '\..\..\config.php';
 
 /**
  * This file is part of workerman.
@@ -73,7 +74,9 @@ class Events
     public static function connDatabase()
     {
         global $db;
-        $db = new \Workerman\MySQL\Connection('localhost', '3306', 'root', '', 'yamamoto');
+        global $config;
+        var_dump($config);
+        $db = new \Workerman\MySQL\Connection($config['db']['host'], $config['db']['port'], $config['db']['user'], $config['db']['pwd'], $config['db']['name']);
         //$all_tables = $db->query('show tables');
         //查詢
         //var_dump($all_tables);
@@ -140,8 +143,7 @@ class Events
         if (!array_key_exists('sort', $_SESSION)) {
             Events::onConnect($client_id);
         }
-
-
+        $now = (new DateTime())->format('Y-m-d H:i:s');
         // 向所有人发送
         //Gateway::sendToAll("$client_id said $message\r\n");
         //解包数据
@@ -152,45 +154,38 @@ class Events
 
         //Dryer 註冊包  @@@00017162485b30dbe2644067b6ebc5ebe0af 字符串+PSN+PWD
         if ($head == '@@@') {
-            print_r("+++++++++++++++++++");
-            $_SESSION['now'] = new DateTime();
-            $psn = substr($data, 3, 4);
-            $pwd = substr($data, 5);
-            $entity = $db   ->select('id,sort,psn,addr')
-                            ->from('ym_entity')
-                            ->where('flag= :flag and psn= :psn and pwd= :pwd')
-                            ->bindValues(array('flag' => 1,'psn'=>$psn,'pwd'=>$pwd))
-                            ->row();
-            if($entity){
+            $psn = hexdec(substr($data, 3, 4));
+            $pwd = substr($data, 7);
+            $entity = $db->select('id,psn,sort,addr')
+                ->from('ym_entity')
+                ->where("flag=:flag and pwd=:pwd and psn=:psn")
+                ->bindValues(array('flag' => 1, 'psn' => $psn, 'pwd' => $pwd))
+                ->row();
+            if ($entity) {
                 //登入，初始化session參數
-                $_SESSION['id'] = $entity['id'];
-                $_SESSION['psn'] = $entity['psn'];
-                $_SESSION['sort'] = $entity['sort'];
-                $_SESSION['addr'] = $entity['addr'];
-                $_SESSION['record'] = array_fill_keys($datakeys['dryer'], '');
-                $_SESSION['cyclecount'] = 0;
-                $_SESSION['recordindex'] = 0;
-                $_SESSION['connectbegin'] = new DateTime();
-                $_SESSION['cyclebegintime'] = new DateTime();
-                $_SESSION['recordbegintime'] = new DateTime();
-                if (!array_key_exists('gps', $_SESSION)) {
-                    $_SESSION['gps'] = array('lat' => 0, 'lon' => 0, 'velocity' => 0, 'direction' => 0, 'type' => '', 'locationdate' => '');
-                }
-                var_dump($entity);
-            }else{
+                session_destroy();
+                $_SESSION += $entity;
+                $_SESSION['addrh'] = substr('0'.dechex($_SESSION['addr']),-2); //地址位十六进制
+                $_SESSION['psnh'] = substr('000'.dechex($_SESSION['psn']),-4); //地址位十六进制
+                $_SESSION['cyclecount'] = $_SESSION['recordindex'] = 0;
+                $_SESSION['connectbegin'] = $_SESSION['cyclebegin'] = $_SESSION['recordbegin'] = $now;
+                $_SESSION['gps'] = array_fill_keys(array('lat', 'lon', 'velocity', 'direction', 'type', 'locationdate'), null);
+                $_SESSION['record'] = array_fill_keys($datakeys[$entity['sort']], null);
+                //绑定Uid,group
+              //  Gateway::bindUid($client_id,$entity['id']);
+              //  Gateway::joinGroup($client_id,$entity['sort']);
+            } else {
                 //登出
                 session_destroy();
-                //Gateway::destoryCurrentClient();
+                Gateway::destoryCurrentClient();
             }
         }
         //Dryer 心跳包  $$$0001 '字符串+PSN
         elseif ($head == '$$$') {
             if ($_SESSION['recordindex'] >= count($datakeys[$_SESSION['sort']])) {
-                $_SESSION['lastcycletime'] = new DateTime();
-                $_SESSION['lastrecordtime'] = new DateTime();
-                $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
+                $_SESSION['cyclebegin'] = $_SESSION['recordbegin'] = $now;
+                $_SESSION['cyclecount'] += 1;
                 $_SESSION['recordindex'] = 0;
-                //print_r("===============================");
             }
             //发送第一笔数据请求
             //Events::sendRecordAddr($client_id);
@@ -198,7 +193,7 @@ class Events
         //Dryer GPS包
         elseif ($head == '$GP') {
             $adata = explode(',', $data);
-            if ($adata[0] != '$GPRMC') { } elseif (count($adata) < 12) { } elseif ($adata[2] == 'A') {
+            if ($adata[0] == '$GPRMC' && count($adata) >= 12 && $adata[2] == 'A') {
                 $lat = $adata[3];
                 $fLat = ($adata[4] == 'N' ? 1 : -1) * (int) substr($lat, 0, strlen($lat) - 8) + (float) substr($lat, -8) / 60;
                 $lon = $adata[5];
@@ -210,15 +205,15 @@ class Events
                 $_SESSION['gps']['velocity'] = (float) $adata[7] * 1.852 / 3.6; //速度 m/s
                 $_SESSION['gps']['direction'] = $adata[8]; //方向
                 $_SESSION['gps']['type'] = $type; //定位态别
-                $_SESSION['gps']['cdate'] = new DateTime(); //定位时间
+                $_SESSION['gps']['cdate'] = (new DateTime())->format('Y-m-d H:i:s'); //定位时间
             }
         }
         //Dryer 数据
-        elseif ($hexa['h'] == '010302') {
+        elseif ($hexa['h'] == $_SESSION['addrh'].'0302') {
             $crc16 = CrcTool::crc16(pack("H*", $hexa['h'] . $hexa['d']));
             if (unpack("H4s", $crc16)['s'] == $hexa['c']) {
                 $_SESSION['record'][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] = unpack("s1int", pack("H*", $hexa['d']))['int'];
-                $_SESSION['cyclecount'] = $_SESSION['cyclecount'] + 1;
+                $_SESSION['cyclecount'] += 1;
             }
             Events::sendRecordAddr($client_id);
             Events::saveRecord($client_id);
@@ -240,8 +235,8 @@ class Events
     {
         // 向所有人发送 
         //GateWay::sendToAll("$client_id logout\r\n");
-        
-        
+
+        session_destroy();
     }
 
     //发送数据地址
@@ -260,10 +255,9 @@ class Events
             $crc16 = CrcTool::crc16(pack("H*", $hexs));
             $sendAddr = $hexs . unpack("H4s", $crc16)['s'];
             //print_r('==================');
-            var_dump($sendAddr.$client_id);
+            var_dump($sendAddr . $client_id);
             //GateWay::sendToClient($client_id, $sendAddr);
             $_SESSION['recordindex'] += 1;
-
         }
     }
     public static function saveRecord()
@@ -281,7 +275,7 @@ class Events
                 if ($_SESSION['lastrecord'] > 0) {
                     $db->update('ym_record')->cols(array('tdate' => $dt))->where('id = 0' . $_SESSION['lastrecord'])->query();
                 }
-                $insert_id = $db->insert('ym_record')->cols(array('entity' => $_SESSION['id'], 'operating' => $_SESSION['record']['operating'], 'fdate' => $dt, 'para' => $para ))->query();
+                $insert_id = $db->insert('ym_record')->cols(array('entity' => $_SESSION['id'], 'operating' => $_SESSION['record']['operating'], 'fdate' => $dt, 'para' => $para))->query();
                 $db->commitTrans();
                 if ($insert_id > 0) {
                     $_SESSION['lastrecord'] = $insert_id;
@@ -299,33 +293,33 @@ class Events
     public static function dbRecordFmt($data)
     {
         $record = $data;
-        $record['targetmst'] = $record['targetmst']>0?($record['targetmst']/10):$record['targetmst'];
-        $record['mstcorrection'] = $record['mstcorrection']/10;
-        $record['currentmst'] = $record['currentmst']/10;
-        $record['mstvar'] = $record['mstvar']/100;
-        $record['operatinghour'] = ($record['operatinghour1'] + $record['operatinghour2'])/3600;
+        $record['targetmst'] = $record['targetmst'] > 0 ? ($record['targetmst'] / 10) : $record['targetmst'];
+        $record['mstcorrection'] = $record['mstcorrection'] / 10;
+        $record['currentmst'] = $record['currentmst'] / 10;
+        $record['mstvar'] = $record['mstvar'] / 100;
+        $record['operatinghour'] = ($record['operatinghour1'] + $record['operatinghour2']) / 3600;
         unset($record['operatinghour1']);
         unset($record['operatinghour2']);
-        $record['operatedhour'] = $record['operatedhour1']*10000 + $record['operatedhour2'];
+        $record['operatedhour'] = $record['operatedhour1'] * 10000 + $record['operatedhour2'];
         unset($record['operatedhour1']);
         unset($record['operatedhour2']);
-        $record['timersetting'] = $record['timersetting']*10;
+        $record['timersetting'] = $record['timersetting'] * 10;
         return $record;
     }
     public static function svRecordFmt($data)
     {
         $record = $data;
-        $record['targetmst'] = $record['targetmst']>0?($record['targetmst']/10):$record['targetmst'];
-        $record['mstcorrection'] = $record['mstcorrection']/10;
-        $record['currentmst'] = $record['currentmst']/10;
-        $record['mstvar'] = $record['mstvar']/100;
-        $record['operatinghour'] = $record['operatinghour1']*65536/3600 + $record['operatinghour2']/3600;
+        $record['targetmst'] = $record['targetmst'] > 0 ? ($record['targetmst'] / 10) : $record['targetmst'];
+        $record['mstcorrection'] = $record['mstcorrection'] / 10;
+        $record['currentmst'] = $record['currentmst'] / 10;
+        $record['mstvar'] = $record['mstvar'] / 100;
+        $record['operatinghour'] = $record['operatinghour1'] * 65536 / 3600 + $record['operatinghour2'] / 3600;
         unset($record['operatinghour1']);
         unset($record['operatinghour2']);
-        $record['operatedhour'] = $record['operatedhour1']*10000 + $record['operatedhour2'];
+        $record['operatedhour'] = $record['operatedhour1'] * 10000 + $record['operatedhour2'];
         unset($record['operatedhour1']);
         unset($record['operatedhour2']);
-        $record['timersetting'] = $record['timersetting']*10;
+        $record['timersetting'] = $record['timersetting'] * 10;
         return $record;
     }
 }
