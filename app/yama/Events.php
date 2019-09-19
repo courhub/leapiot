@@ -128,6 +128,8 @@ class Events
         $_SESSION['cyclecount'] = 0;
         $_SESSION['connectbegin'] = new DateTime();
         $_SESSION['connectend'] = '';
+        $_SESSION['heartcount'] = 0;
+        $_session['gpscount'] = 0;
     }
 
     /**
@@ -147,11 +149,11 @@ class Events
         // 向所有人发送
         //Gateway::sendToAll("$client_id said $message\r\n");
         //解包数据
-        $amsg = unpack("a*", $message);             //字符數組
-        $data = join($amsg);                        //字符串
-        $head = substr($data, 0, 3);                //前三個字母
-        $hexa = unpack("H6h/H4d/H4c", $message);    //十六進制字符串數組
-
+        $amsg = unpack("a*", $message);                     //字符數組
+        $data = join($amsg);                                //字符串
+        $head = substr($data, 0, 3);                        //前三個字母
+        $hexa = unpack("H2a/H2f/H2l/H4d/H4c", $message);    //十六進制字符串數組a-address；f-function;l-length;d-data;c-crc16
+        
         //Dryer 註冊包  @@@00017162485b30dbe2644067b6ebc5ebe0af 字符串+PSN+PWD
         if ($head == '@@@') {
             $psn = hexdec(substr($data, 3, 4));
@@ -180,16 +182,6 @@ class Events
                 Gateway::destoryCurrentClient();
             }
         }
-        //Dryer 心跳包  $$$0001 '字符串+PSN
-        elseif ($head == '$$$') {
-            if ($_SESSION['recordindex'] >= count($datakeys[$_SESSION['sort']])) {
-                $_SESSION['cyclebegin'] = $_SESSION['recordbegin'] = $now;
-                $_SESSION['cyclecount'] += 1;
-                $_SESSION['recordindex'] = 0;
-            }
-            //发送第一笔数据请求
-            //Events::sendRecordAddr($client_id);
-        }
         //Dryer GPS包
         elseif ($head == '$GP') {
             $adata = explode(',', $data);
@@ -208,9 +200,20 @@ class Events
                 $_SESSION['gps']['cdate'] = (new DateTime())->format('Y-m-d H:i:s'); //定位时间
             }
         }
+        //Dryer 心跳包  $$$0001 '字符串+PSN
+        elseif ($head == '$$$') {
+            $_SESSION['heartcount'] += 1;
+            if ($_SESSION['recordindex'] >= count($datakeys[$_SESSION['sort']])) {
+                $_SESSION['cyclebegin'] = $_SESSION['recordbegin'] = $now;
+                $_SESSION['cyclecount'] += 1;
+                $_SESSION['recordindex'] = 0;
+            }
+            //发送第一笔数据请求
+            //Events::sendRecordAddr($client_id);
+        }
         //Dryer 数据
-        elseif ($hexa['h'] == $_SESSION['addrh'].'0302') {
-            $crc16 = CrcTool::crc16(pack("H*", $hexa['h'] . $hexa['d']));
+        elseif ($hexa['a'].$hexa['f'].$hexa['l'] == $_SESSION['addrh'].'0302') {
+            $crc16 = CrcTool::crc16(pack("H*", $hexa['a'] . $hexa['f'].$hexa['l'].$hexa['d']));
             if (unpack("H4s", $crc16)['s'] == $hexa['c']) {
                 $_SESSION['record'][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] = unpack("s1int", pack("H*", $hexa['d']))['int'];
                 $_SESSION['cyclecount'] += 1;
@@ -223,8 +226,21 @@ class Events
             print_r("++++++++++++++++++++++");
             var_dump($data);
         }
+        //Dryer ERROR CODE
+        elseif ($hexa['a'].$hexa['f'].$hexa['l'] == $_SESSION['addrh'].'8301' )
+        {
+            $crc16 = CrcTool::crc16(pack("H*", $hexa['a'] . $hexa['f'].$hexa['l']));
+            if (unpack("H4s", $crc16)['s'] == $hexa['d']) {
+                $_SESSION['errorcode'] = unpack("s1int", pack("H*", $hexa['l']))['int'];
+                $_SESSION['cyclecount'] += 1;
+            }
+             
+        }
         //平台
-        elseif ($hexa['h'] == 0x5A && $data[1] == 0xA5) { }
+        elseif ($hexa['a'] == 0x5A && $data[1] == 0xA5)
+        {
+            
+        }
     }
 
     /**
@@ -305,6 +321,12 @@ class Events
         unset($record['operatedhour2']);
         $record['timersetting'] = $record['timersetting'] * 10;
         return $record;
+    }
+    public static function dbCycleFmt($data)
+    {
+        $cycle = $data;
+        
+        return $cycle;
     }
     public static function svRecordFmt($data)
     {
