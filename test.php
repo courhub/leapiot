@@ -13,7 +13,7 @@ use \Workerman\Worker;
  *      'operation'         => '010300000001840A',
  *      'abnormal'          => '010300010001D5CA',
  *      'operatingtype'     => '0103000B0001F5C8',
- *      'grainsortmp'       => '0103000C00014409',
+ *      'grain'             => '0103000C00014409',
  *      'targetmst'         => '0103000D000115C9',
  *      'loadedamt'         => '0103000E0001E5C9',
  *      'settmp'            => '010300110001D40F',
@@ -83,6 +83,7 @@ $client_id = 'FFFF0001CCCC0001';
 //$eid = substr($data, 3, 4);
 //var_dump(array($amsg,$data, $head, $eid));
 Events::connDatabase();
+//Events::connServer();
 //Events::onConnect($client_id);
 Events::onMessage($client_id, $message);
 //Events::onClose($client_id);

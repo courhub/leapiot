@@ -75,7 +75,6 @@ class Events
     {
         global $db;
         global $config;
-        var_dump($config);
         $db = new \Workerman\MySQL\Connection($config['db']['host'], $config['db']['port'], $config['db']['user'], $config['db']['pwd'], $config['db']['name']);
         //$all_tables = $db->query('show tables');
         //查詢
@@ -98,9 +97,11 @@ class Events
     public static function connServer()
     {
         global $sv;
+        global $config;
         //異步链接远端TCP服务器
-        $sv = new AsyncTcpConnection('');
+        $sv = new AsyncTcpConnection($config['tcpserver']);
         $sv->onMessage = function ($sv, $msg) {
+
             //$sv->send('');
         };
         $sv->onClose = function ($sv) {
@@ -126,7 +127,7 @@ class Events
         $_SESSION['sort'] = 0;
         $_SESSION['recordindex'] = 0;
         $_SESSION['cyclecount'] = 0;
-        $_SESSION['connectbegin'] = new DateTime();
+        $_SESSION['connectbegin'] = '';
         $_SESSION['connectend'] = '';
         $_SESSION['heartcount'] = 0;
         $_SESSION['gpscount'] = 0;
@@ -167,10 +168,9 @@ class Events
                 ->row();
             if ($entity) {
                 //登入，初始化session參數
-                session_destroy();
                 $_SESSION += $entity;
-                $_SESSION['addrh'] = substr('0' . dechex($_SESSION['addr']), -2); //地址位十六进制
-                $_SESSION['psnh'] = substr('000' . dechex($_SESSION['psn']), -4); //地址位十六进制
+                $_SESSION['addrh'] = substr('0' . dechex($_SESSION['addr']), -2); //地址位2位十六进制
+                $_SESSION['psnh'] = substr('000' . dechex($_SESSION['psn']), -4); //厂家序号4位十六进制
                 $_SESSION['cyclecount'] = $_SESSION['recordindex'] = 0;
                 $_SESSION['connectbegin'] = $_SESSION['cyclebegin'] = $_SESSION['recordbegin'] = $now;
                 $_SESSION['gps'] = array_fill_keys(array('lat', 'lon', 'velocity', 'direction', 'type', 'locationdate'), null);
@@ -200,6 +200,8 @@ class Events
                 $_SESSION['gps']['direction'] = $adata[8]; //方向
                 $_SESSION['gps']['type'] = $type; //定位态别
                 $_SESSION['gps']['cdate'] = (new DateTime())->format('Y-m-d H:i:s'); //定位时间
+
+                $_SESSION['gpscount'] += 1;
             }
         }
         //Dryer 心跳包  $$$0001 '字符串+PSN
@@ -236,8 +238,15 @@ class Events
                 $_SESSION['cyclecount'] += 1;
             }
         }
-        //平台
+        //TCPSERVER
         elseif ($hexa['a'] == 0x5A && $data[1] == 0xA5) { }
+
+        //向SV发送位置信息
+        if ($_SESSION['gpscount'] == 1 && $_SESSION['connectbegin'] != '') { }
+        //向SV发送状态信息
+        if (1) { }
+        //向SV发送烘干信息
+        if (1) { }
     }
 
     /**
@@ -250,12 +259,10 @@ class Events
         //GateWay::sendToAll("$client_id logout\r\n");
         global $db;
         $dt = (new DateTime())->format('Y-m-d H:i:s');
-        if($_SESSION['lastrecord'] > 0)
-        {
+        if ($_SESSION['lastrecord'] > 0) {
             $db->update('ym_record')->cols(array('tdate' => $dt))->where('id = 0' . $_SESSION['lastrecord'])->query();
         }
-        if($_SESSION['lastcycle'] > 0)
-        {
+        if ($_SESSION['lastcycle'] > 0) {
             $db->update('ym_cycle')->cols(array('edate' => $dt, 'type' => 2, 'erecord' => $_SESSION['lastrecord']))->query();
         }
         session_destroy();
@@ -272,14 +279,10 @@ class Events
             && array_key_exists($_SESSION['sort'], $datakeys)
             && $_SESSION['recordindex'] < count($datakeys[$_SESSION['sort']])
         ) {
-            //var_dump($_SESSION['recordindex']);
-            $hexs = substr('0' . dechex($_SESSION['addr']), -2) . '03' . $dataaddr[$_SESSION['sort']][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] . '0001';
+            $hexs = $_SESSION['addrh'] . '03' . $dataaddr[$_SESSION['sort']][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] . '0001';
             $crc16 = CrcTool::crc16(pack("H*", $hexs));
             $sendAddr = $hexs . unpack("H4s", $crc16)['s'];
-            //print_r('==================');
-            var_dump($sendAddr . $client_id);
-            //GateWay::sendToClient($client_id, $sendAddr);
-            //$_SESSION['recordindex'] += 1;
+            Gateway::sendToCient($_SESSION['clientid'], $sendAddr);
         }
     }
     public static function saveRecord()
@@ -307,14 +310,25 @@ class Events
     }
     public static function saveCycle()
     {
-        global $dataaddr;
-        global $datakeys;
         global $db;
-        //插入
-        $insert_id = $db->insert('ym_cycle')->cols(array('name' => '', 'sort' => '', 'key' => ''))->query();
-        //更新
-        //$row_count = $db->update('ym_para')->cols(array('name'))->where('ID=1')->bindValue('name','NAMES')->
-
+        $insert_id = 0;
+        $dt = (new DateTime())->format('Y-m-d H:i:s');
+        if($_SESSION['lastrecord']>0)
+        {
+            $db->beginTrans();
+            if ($_SESSION['lastcycle'] > 0) {
+                $db->update('ym_cycle')->cols(array('edate' => $dt , 'erecord' => $_SESSION['lastrecord']))->where('id = 0' . $_SESSION['lastcycle'])->query();
+            }
+            $insert_id = $db->insert('ym_cycle')->cols(array(
+                'entity' => $_SESSION['id'], 'bdate' => $dt, 'stage' => 0,
+                'type' => $_SESSION['record']['operatingtype'], 'amt'=>$_SESSION['record']['loadedamt'], 'unit'=>'T',
+                'kind' => $_SESSION['record']['grain'], 'brecord' =>$_SESSION['lastrecord']
+            ))->query();
+            $db->commitTrans();
+            if ($insert_id) {
+                $_SESSION['lastcycle'] = $insert_id;
+            }
+        }
     }
 
     public static function dbRecordFmt($data)
@@ -332,12 +346,6 @@ class Events
         unset($record['operatedhour2']);
         $record['timersetting'] = $record['timersetting'] * 10;
         return $record;
-    }
-    public static function dbCycleFmt($data)
-    {
-        $cycle = $data;
-
-        return $cycle;
     }
     public static function svRecordFmt($data)
     {
