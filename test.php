@@ -85,7 +85,7 @@ $client_id = 'FFFF0001CCCC0001';
 Events::connDatabase();
 //Events::connServer();
 //Events::onConnect($client_id);
-Events::onMessage($client_id, $message);
+//Events::onMessage($client_id, $message);
 //Events::onClose($client_id);
 //Events::sendRecordAddr();
 //$dt = new DateTime();
