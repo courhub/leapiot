@@ -101,7 +101,7 @@ class Events
         //異步链接远端TCP服务器
         $sv = new AsyncTcpConnection($config['tcpserver']);
         $sv->onMessage = function ($sv, $msg) {
-
+            
             //$sv->send('');
         };
         $sv->onClose = function ($sv) {
