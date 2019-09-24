@@ -36,7 +36,7 @@ $dataaddr = array(1 => array(
     'operating'         => '0000',
     'abnormal'          => '0001',
     'operatingtype'     => '000B',
-    'grainsortmp'       => '000C',
+    'grain'             => '000C',
     'targetmst'         => '000D',
     'loadedamt'         => '000E',
     'settmp'            => '0011',
@@ -76,23 +76,6 @@ class Events
         global $db;
         global $config;
         $db = new \Workerman\MySQL\Connection($config['db']['host'], $config['db']['port'], $config['db']['user'], $config['db']['pwd'], $config['db']['name']);
-        //$all_tables = $db->query('show tables');
-        //查詢
-        //var_dump($all_tables);
-        //$rows = $db->select('*')->from('ym_para')->where('flag= :flag')->bindValues(array('flag' => 1))->query();
-        //var_dump($rows);
-        //$row = $db->select('*')->from('ym_para')->where('flag= :flag')->bindValues(array('flag' => 1))->row();
-        //var_dump($row);
-
-        //插入
-        //$insert_id = $db->insert('ym_para')->cols(array('name'=>'', 'sort'=>'', 'key'=>''))->query();
-        //更新
-        //$row_count = $db->update('ym_para')->cols(array('name'))->where('ID=1')->bindValue('name','NAMES')->
-        //json
-        //$json = $db->query('SELECT "{\"a\": 1, \"b\": {\"c\": 30}}"');
-        //var_dump($json);
-        //select coalesce(null,2,3)
-        //var_dump(md5('yama' . 'LEAPIOT'));
     }
     public static function connServer()
     {
@@ -101,7 +84,8 @@ class Events
         //異步链接远端TCP服务器
         $sv = new AsyncTcpConnection($config['tcpserver']);
         $sv->onMessage = function ($sv, $msg) {
-            
+            $hhead   = unpack("H4head/H4factory/H4psn/H4sort/H2io/H4sn/H16len", $msg);    //十六進制字符串數組a-address；f-function;l-length;d-data;c-crc16
+            if($hhead['head']!='5aa5' || $hhead['factory']!=0x0001)
             //$sv->send('');
         };
         $sv->onClose = function ($sv) {
@@ -125,12 +109,13 @@ class Events
         $_SESSION['id'] = 0;
         $_SESSION['clientid'] = $client_id;
         $_SESSION['sort'] = 0;
-        $_SESSION['recordindex'] = 0;
-        $_SESSION['cyclecount'] = 0;
         $_SESSION['connectbegin'] = '';
         $_SESSION['connectend'] = '';
         $_SESSION['heartcount'] = 0;
         $_SESSION['gpscount'] = 0;
+
+        $_SESSION['recordindex'] = 0;
+        $_SESSION['cyclecount'] = 0;
         $_SESSION['lastrecord'] = 0;
         $_SESSION['lastcycle'] = 0;
     }
@@ -175,6 +160,7 @@ class Events
                 $_SESSION['connectbegin'] = $_SESSION['cyclebegin'] = $_SESSION['recordbegin'] = $now;
                 $_SESSION['gps'] = array_fill_keys(array('lat', 'lon', 'velocity', 'direction', 'type', 'locationdate'), null);
                 $_SESSION['record'] = array_fill_keys($datakeys[$entity['sort']], null);
+                $_SESSION += array('recordindex'=>0, 'recordcount'=>0, 'cyclecount'=>0, 'lastrecord'=>0, 'lastcycle'=>0, 'last'=>0 );
                 //绑定Uid,group
                 //  Gateway::bindUid($client_id,$entity['id']);
                 //  Gateway::joinGroup($client_id,$entity['sort']);
