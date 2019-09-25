@@ -30,8 +30,18 @@ use \Workerman\Worker;
 use \Workerman\Connection\TcpConnection;
 use \Workerman\Connection\AsyncTcpConnection;
 
+/**
+ * 接收設備的心跳和定位信息並查詢其他信息
+ * 保存設備的狀態和cycle信息到數據庫 $db
+ * 發送設備信息到Tcp平台 $sv
+ * 接收Tcp平台的查詢並返回結果
+ */
+global $db, $sv, $svpipe, $svsn;
 $db = null; //database
 $sv = null; //conntoserver
+$svpipe = array(); //向Tcp平台發送信息的緩存數據 key=>msg key為隨機順序號
+$svsn = 0; //Tcp數據包的隨機序號 int，最大65535，循環使用。
+
 $dataaddr = array(1 => array(
     'operating'         => '0000',
     'abnormal'          => '0001',
@@ -79,18 +89,83 @@ class Events
     }
     public static function connServer()
     {
-        global $sv;
         global $config;
+        global $sv;
+        global $svpipe;
         //異步链接远端TCP服务器
-        $sv = new AsyncTcpConnection($config['tcpserver']);
+        $sv = new AsyncTcpConnection($config['tcp']['host']);
+        $sv->onConnect = function ($sv) {
+            $timer_interval = 10;
+            Timer::add($timer_interval, function () {
+                global $sv;
+                global $svpipe;
+                if ($svpipe) {
+                    $sv->send(array_slice($svpipe, 1, 1));
+                }
+            });
+        };
         $sv->onMessage = function ($sv, $msg) {
-            $hhead   = unpack("H4head/H4factory/H4psn/H4sort/H2io/H4sn/H16len", $msg);    //十六進制字符串數組a-address；f-function;l-length;d-data;c-crc16
-            if($hhead['head']!='5aa5' || $hhead['factory']!=0x0001)
+            global $svpipe;
+            global $config;
+            $svh  = unpack("H4head/H4factory/H4psn/H4sort/H2io/H4sn/H8len/H4result/H*datatime", $msg);    //十六進制字符串數組a-address；f-function;l-length;d-data;c-crc16
+            if ($svh['head'] != '5aa5' || hexdec($svh['factory']) != $config['tcp']['fsn']) {
+                //非法信息，不予處理
+            } else if ($svh['io'] == '01' && $svh['result'] == '0000') {
+                //應答信息，正確結果
+                //刪除傳輸緩存中的信息
+                $key = hexdec($svh['sn']);
+                if (array_key_exists($key, $svpipe)) {
+                    unset($svpipe[$key]);
+                }
+            } else if ($svh['io'] == '01') {
+                //應答信息，錯誤結果
+            } else if ($svh['io'] == '00' && $svh['sort'] == '0004') {
+                //查詢設備狀態
+                $psn = hexdec($svh['psn']);
+                $now = new DateTime();
+                $data = array('run'=>'0000','operating'=>'0005','grain'=>'0004',
+                    'currentmst'=>'00000000','hotairtmp'=>'00000000','outsidetmp'=>'00000000',
+                    'status'=>'0000','alert'=>'0000','datetime'=>Events::hexDateTime());
+                if(Gateway::isUidOnline($psn)){
+                
+                }
+            }
             //$sv->send('');
         };
         $sv->onClose = function ($sv) {
             $sv->reConnect(1);
         };
+    }
+    /**
+     * 產生Tcp信息隨機序列號，每次+1，超過65535時從1開始。
+     */
+    public static function getSvSn()
+    {
+        global $svsn;
+        $svsn = $svsn >= 65535 ? 1 : ++$svsn;
+        return $svsn;
+    }
+    /**
+     * 增加Tcp信息緩存
+     */
+    public static function addSvPipe($sn, $data)
+    {
+        global $svpipe;
+        global $config;
+        if (count($svpipe) > $config['tcp']['pipelen']) {
+            $svpipe = array_slice($svpipe, count($svpipe) - $config['tcp']['pipelen'], $config['tcp']['pipelen'], true);
+        }
+        $svpipe[$sn] = $data;
+        return $svpipe;
+    }
+    public static function hexDateTime(){
+        $now = explode(',',(new DateTime())->format('Y,m,d,H,i,s'));
+        return  substr('000'.dechex((int)$now[0]),-4).
+                substr('000'.dechex((int)$now[1]),-4).
+                substr('000'.dechex((int)$now[2]),-4).
+                substr('000'.dechex((int)$now[3]),-4).
+                substr('000'.dechex((int)$now[4]),-4).
+                substr('000'.dechex((int)$now[5]),-4);
     }
     /**
      * 当客户端连接时触发
@@ -130,6 +205,7 @@ class Events
         global $dataaddr;
         global $datakeys;
         global $db;
+        global $sv;
         if (!array_key_exists('sort', $_SESSION)) {
             Events::onConnect($client_id);
         }
@@ -151,6 +227,7 @@ class Events
                 ->where("flag=:flag and pwd=:pwd and psn=:psn")
                 ->bindValues(array('flag' => 1, 'psn' => $psn, 'pwd' => $pwd))
                 ->row();
+            var_dump($entity);
             if ($entity) {
                 //登入，初始化session參數
                 $_SESSION += $entity;
@@ -160,7 +237,7 @@ class Events
                 $_SESSION['connectbegin'] = $_SESSION['cyclebegin'] = $_SESSION['recordbegin'] = $now;
                 $_SESSION['gps'] = array_fill_keys(array('lat', 'lon', 'velocity', 'direction', 'type', 'locationdate'), null);
                 $_SESSION['record'] = array_fill_keys($datakeys[$entity['sort']], null);
-                $_SESSION += array('recordindex'=>0, 'recordcount'=>0, 'cyclecount'=>0, 'lastrecord'=>0, 'lastcycle'=>0, 'last'=>0 );
+                $_SESSION += array('recordindex' => 0, 'recordcount' => 0, 'cyclecount' => 0, 'lastrecord' => 0, 'lastcycle' => 0, 'last' => 0);
                 //绑定Uid,group
                 //  Gateway::bindUid($client_id,$entity['id']);
                 //  Gateway::joinGroup($client_id,$entity['sort']);
@@ -173,6 +250,7 @@ class Events
         //Dryer GPS包
         elseif ($head == '$GP') {
             $adata = explode(',', $data);
+            var_dump($adata);
             if ($adata[0] == '$GPRMC' && count($adata) >= 12 && $adata[2] == 'A') {
                 $lat = $adata[3];
                 $fLat = ($adata[4] == 'N' ? 1 : -1) * (int) substr($lat, 0, strlen($lat) - 8) + (float) substr($lat, -8) / 60;
@@ -186,7 +264,6 @@ class Events
                 $_SESSION['gps']['direction'] = $adata[8]; //方向
                 $_SESSION['gps']['type'] = $type; //定位态别
                 $_SESSION['gps']['cdate'] = (new DateTime())->format('Y-m-d H:i:s'); //定位时间
-
                 $_SESSION['gpscount'] += 1;
             }
         }
@@ -228,7 +305,10 @@ class Events
         elseif ($hexa['a'] == 0x5A && $data[1] == 0xA5) { }
 
         //向SV发送位置信息
-        if ($_SESSION['gpscount'] == 1 && $_SESSION['connectbegin'] != '') { }
+        if ($_SESSION['gpscount'] == 1 && $_SESSION['connectbegin'] != '') {
+            $gpsmsg = '';
+            $sv->send();
+        }
         //向SV发送状态信息
         if (1) { }
         //向SV发送烘干信息
@@ -299,16 +379,15 @@ class Events
         global $db;
         $insert_id = 0;
         $dt = (new DateTime())->format('Y-m-d H:i:s');
-        if($_SESSION['lastrecord']>0)
-        {
+        if ($_SESSION['lastrecord'] > 0) {
             $db->beginTrans();
             if ($_SESSION['lastcycle'] > 0) {
-                $db->update('ym_cycle')->cols(array('edate' => $dt , 'erecord' => $_SESSION['lastrecord']))->where('id = 0' . $_SESSION['lastcycle'])->query();
+                $db->update('ym_cycle')->cols(array('edate' => $dt, 'erecord' => $_SESSION['lastrecord']))->where('id = 0' . $_SESSION['lastcycle'])->query();
             }
             $insert_id = $db->insert('ym_cycle')->cols(array(
                 'entity' => $_SESSION['id'], 'bdate' => $dt, 'stage' => 0,
-                'type' => $_SESSION['record']['operatingtype'], 'amt'=>$_SESSION['record']['loadedamt'], 'unit'=>'T',
-                'kind' => $_SESSION['record']['grain'], 'brecord' =>$_SESSION['lastrecord']
+                'type' => $_SESSION['record']['operatingtype'], 'amt' => $_SESSION['record']['loadedamt'], 'unit' => 'T',
+                'kind' => $_SESSION['record']['grain'], 'brecord' => $_SESSION['lastrecord']
             ))->query();
             $db->commitTrans();
             if ($insert_id) {
@@ -333,6 +412,8 @@ class Events
         $record['timersetting'] = $record['timersetting'] * 10;
         return $record;
     }
+    public static function svConnectFmt($data)
+    { }
     public static function svRecordFmt($data)
     {
         $record = $data;

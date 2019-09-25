@@ -35,8 +35,6 @@ use \Workerman\Worker;
  *);
  */
 
-
-
 /**
  * pack/unpack的模板字符含義
  * a 一個填充空的字符串
@@ -71,20 +69,35 @@ $message = "@@@00017162485b30dbe2644067b6ebc5ebe0af";
 //$message = pack("H*",$message);
 
 //GPS   format=a*
-//$message = '$GPRMC,225530.000,A,3637.26040,N,11700.56340,E,10.000,97.17,220512,,,D*57';
+$message = '$GPRMC,225530.000,A,3637.26040,N,11700.56340,E,10.000,97.17,220512,,,D*57';
 var_dump($message);
 //var_dump(pack("H*",$message)); 
 $client_id = 'FFFF0001CCCC0001';
 
+/**
+ * TCP SERVER
+ */
+$message = '5AA50001000100030100320000000E000007E300070018001100190014';
+
+var_dump($message);
+$message = pack("H*",$message);
 //$amsg = unpack("a*", $message);
 
 //$data = join($amsg);
 //$head = substr($data, 0, 3);
 //$eid = substr($data, 3, 4);
 //var_dump(array($amsg,$data, $head, $eid));
-Events::connDatabase();
+//Events::onWorkerStart(null);
+//Events::connDatabase();
 //Events::connServer();
 //Events::onConnect($client_id);
+
+var_dump($message);
+
+$svh  = unpack("H4head/H4factory/H4psn/H4sort/H2io/H4sn/H8len/H4result/H*datatime", $message);    //十六進制字符串數組a-address；f-function;l-length;d-data;c-crc16
+var_dump($svh);
+var_dump(hexdec($svh['psn']));
+var_dump(Events::hexDateTime());
 //Events::onMessage($client_id, $message);
 //Events::onClose($client_id);
 //Events::sendRecordAddr();
