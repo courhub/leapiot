@@ -98,6 +98,20 @@ $svh  = unpack("H4head/H4factory/H4psn/H4sort/H2io/H4sn/H8len/H4result/H*datatim
 var_dump($svh);
 var_dump(hexdec($svh['psn']));
 var_dump(Events::hexDateTime());
+
+$data = array(
+    'run' => '0000', 'operating' => '0005', 'grain' => '0004',
+    'currentmst' => '00000000', 'hotairtmp' => '00000000', 'outsidetmp' => '00000000',
+    'status' => '0000', 'alert' => '0000', 'datetime' => Events::hexDateTime()
+);
+$msg = pack(
+    "H4H4H4H4H2H4H8"."H4H4H4H8H8H8H4H4H24",
+                    '5aa5','0003',$svh['psn'],'0004','0001',$svh['sn'],'00000022',
+                    $data['run'],$data['operating'],$data['grain'],
+                    $data['currentmst'],$data['hotairtmp'],$data['outsidetmp'],
+                    $data['status'],$data['alert'],$data['datetime']
+);
+var_dump(unpack('H*',$msg));
 //Events::onMessage($client_id, $message);
 //Events::onClose($client_id);
 //Events::sendRecordAddr();

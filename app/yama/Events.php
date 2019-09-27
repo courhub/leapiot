@@ -75,23 +75,33 @@ $datakeys = array(1 => array_keys($dataaddr[1]));
  */
 class Events
 {
+    /**
+     * 当服務啟動時触发
+     * 鏈接數據庫
+     * 鏈接TcpServer(外部數據接收平台)
+     * @param obj $businessworker 啟動的Workerman
+     */
     public static function onWorkerStart($businessWorker)
     {
         Events::connDatabase();
         Events::connServer();
     }
-
+    /**
+     * 鏈接數據庫
+     */
     public static function connDatabase()
     {
         global $db;
         global $config;
         $db = new \Workerman\MySQL\Connection($config['db']['host'], $config['db']['port'], $config['db']['user'], $config['db']['pwd'], $config['db']['name']);
     }
+    /**
+     * 鏈接TcpServer(外部數據接收平台)
+     */
     public static function connServer()
     {
         global $config;
         global $sv;
-        global $svpipe;
         //異步链接远端TCP服务器
         $sv = new AsyncTcpConnection($config['tcp']['host']);
         $sv->onConnect = function ($sv) {
@@ -104,6 +114,11 @@ class Events
                 }
             });
         };
+        /**
+         * 設定Tcp鏈接數據處理方法
+         * @param AsyncTcpConnection $sv 異步鏈接
+         * @param bin $msg 收到的消息
+         */
         $sv->onMessage = function ($sv, $msg) {
             global $svpipe;
             global $config;
@@ -122,13 +137,32 @@ class Events
             } else if ($svh['io'] == '00' && $svh['sort'] == '0004') {
                 //查詢設備狀態
                 $psn = hexdec($svh['psn']);
-                $now = new DateTime();
-                $data = array('run'=>'0000','operating'=>'0005','grain'=>'0004',
-                    'currentmst'=>'00000000','hotairtmp'=>'00000000','outsidetmp'=>'00000000',
-                    'status'=>'0000','alert'=>'0000','datetime'=>Events::hexDateTime());
-                if(Gateway::isUidOnline($psn)){
-                
+                $data = array(
+                    'run' => '0000', 'operating' => '0005', 'grain' => '0004',
+                    'currentmst' => '00000000', 'hotairtmp' => '00000000', 'outsidetmp' => '00000000',
+                    'status' => '0000', 'alert' => '0000', 'datetime' => Events::hexDateTime()
+                );
+                if (Gateway::isUidOnline($psn)) {
+                    $session = Gateway::getSession(Gateway::getClientIdByUid($psn));
+                    if ($session) {
+                        $data['run'] = '0001';
+                        $data['operating'] = dechex($session['operating']);
+                        $data['grain'] = dechex($session['grain']);
+                        $data['currentmst'] = dechex($session['currentmst']);
+                        $data['hotairtmp'] = dechex($session['hotairtmp']);
+                        $data['outsidetmp'] = dechex($session['outsidetmp']);
+                        $data['status'] = dechex($session['status']);
+                        $data['alert'] = deshex($session['alert']);
+                    }
                 }
+                $msg = pack(
+                    "H4H4H4H4H2H4H8"."H4H4H4H8H8H8H4H4H24",
+                    '5aaf','0003',$svh['psn'],'0004','0001',$svh['sn'],'001E',
+                    $data['run'],$data['operating'],$data['grain'],
+                    $data['currentmst'],$data['hotairtmp'],$data['outsidetmp'],
+                    $data['status'],$data['alert'],$data['datetime']
+                );
+                $sv->send($msg);
             }
             //$sv->send('');
         };
@@ -158,15 +192,18 @@ class Events
         $svpipe[$sn] = $data;
         return $svpipe;
     }
-    public static function hexDateTime(){
-        $now = explode(',',(new DateTime())->format('Y,m,d,H,i,s'));
-        return  substr('000'.dechex((int)$now[0]),-4).
-                substr('000'.dechex((int)$now[1]),-4).
-                substr('000'.dechex((int)$now[2]),-4).
-                substr('000'.dechex((int)$now[3]),-4).
-                substr('000'.dechex((int)$now[4]),-4).
-                substr('000'.dechex((int)$now[5]),-4);
+    public static function hexDateTime()
+    {
+        $now = explode(',', (new DateTime())->format('Y,m,d,H,i,s'));
+        return  substr('000' . dechex((int) $now[0]), -4) .
+            substr('000' . dechex((int) $now[1]), -4) .
+            substr('000' . dechex((int) $now[2]), -4) .
+            substr('000' . dechex((int) $now[3]), -4) .
+            substr('000' . dechex((int) $now[4]), -4) .
+            substr('000' . dechex((int) $now[5]), -4);
     }
+
+
     /**
      * 当客户端连接时触发
      * 如果业务不需此回调可以删除onConnect
