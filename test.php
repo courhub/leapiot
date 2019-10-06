@@ -111,6 +111,7 @@ $msg = pack(
                     $data['currentmst'],$data['hotairtmp'],$data['outsidetmp'],
                     $data['status'],$data['alert'],$data['datetime']
 );
+var_dump(Events::getSvSn());
 var_dump(unpack('H*',$msg));
 //Events::onMessage($client_id, $message);
 //Events::onClose($client_id);

@@ -91,8 +91,8 @@ class Events
      */
     public static function connDatabase()
     {
-        global $db;
         global $config;
+        global $db;
         $db = new \Workerman\MySQL\Connection($config['db']['host'], $config['db']['port'], $config['db']['user'], $config['db']['pwd'], $config['db']['name']);
     }
     /**
@@ -106,6 +106,7 @@ class Events
         $sv = new AsyncTcpConnection($config['tcp']['host']);
         $sv->onConnect = function ($sv) {
             $timer_interval = 10;
+            //每隔10秒向TCP服務器發送緩存的數據（FIFO),如果接收到發送成功的回復則承從緩存的數組中刪除此數據。
             Timer::add($timer_interval, function () {
                 global $sv;
                 global $svpipe;
