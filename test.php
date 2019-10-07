@@ -104,15 +104,18 @@ $data = array(
     'currentmst' => '00000000', 'hotairtmp' => '00000000', 'outsidetmp' => '00000000',
     'status' => '0000', 'alert' => '0000', 'datetime' => Events::hexDateTime()
 );
+echo '=========================';
+$fmt = "H4H4H4H4H2H4H8"."H4H4H4H8H8H8H4H4H24";
 $msg = pack(
-    "H4H4H4H4H2H4H8"."H4H4H4H8H8H8H4H4H24",
-                    '5aa5','0003',$svh['psn'],'0004','0001',$svh['sn'],'00000022',
-                    $data['run'],$data['operating'],$data['grain'],
-                    $data['currentmst'],$data['hotairtmp'],$data['outsidetmp'],
-                    $data['status'],$data['alert'],$data['datetime']
+    $fmt,
+    '5aa5','0003', $svh['psn'],'0004','0001', $svh['sn'],'00000022',
+    $data['run'], $data['operating'], $data['grain'],
+    $data['currentmst'], $data['hotairtmp'], $data['outsidetmp'],
+    $data['status'], $data['alert'], $data['datetime']
 );
 var_dump(Events::getSvSn());
-var_dump(unpack('H*',$msg));
+$data = unpack("H4h/H4t/Hpsn/H4h1/H2sn", $msg);
+var_dump( array_slice($data,0,1));
 //Events::onMessage($client_id, $message);
 //Events::onClose($client_id);
 //Events::sendRecordAddr();

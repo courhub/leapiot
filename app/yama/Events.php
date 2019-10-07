@@ -111,7 +111,7 @@ class Events
                 global $sv;
                 global $svpipe;
                 if ($svpipe) {
-                    $sv->send(array_slice($svpipe, 1, 1));
+                    $sv->send(array_slice($svpipe, 0, 1));
                 }
             });
         };
@@ -140,7 +140,7 @@ class Events
                 $psn = hexdec($svh['psn']);
                 $data = array(
                     'run' => '0000', 'operating' => '0005', 'grain' => '0004',
-                    'currentmst' => '00000000', 'hotairtmp' => '00000000', 'outsidetmp' => '00000000',
+                    'hotairtmp' => '00000000', 'outsidetmp' => '00000000',
                     'status' => '0000', 'alert' => '0000', 'datetime' => Events::hexDateTime()
                 );
                 if (Gateway::isUidOnline($psn)) {
@@ -149,7 +149,6 @@ class Events
                         $data['run'] = '0001';
                         $data['operating'] = dechex($session['operating']);
                         $data['grain'] = dechex($session['grain']);
-                        $data['currentmst'] = dechex($session['currentmst']);
                         $data['hotairtmp'] = dechex($session['hotairtmp']);
                         $data['outsidetmp'] = dechex($session['outsidetmp']);
                         $data['status'] = dechex($session['status']);
@@ -158,14 +157,13 @@ class Events
                 }
                 $msg = pack(
                     "H4H4H4H4H2H4H8"."H4H4H4H8H8H8H4H4H24",
-                    '5aaf','0003',$svh['psn'],'0004','0001',$svh['sn'],'001E',
+                    '5aaf','0003', $svh['psn'],'0004','0001',$svh['sn'],'001E',
                     $data['run'],$data['operating'],$data['grain'],
                     $data['currentmst'],$data['hotairtmp'],$data['outsidetmp'],
                     $data['status'],$data['alert'],$data['datetime']
                 );
                 $sv->send($msg);
             }
-            //$sv->send('');
         };
         $sv->onClose = function ($sv) {
             $sv->reConnect(1);
@@ -203,7 +201,6 @@ class Events
             substr('000' . dechex((int) $now[4]), -4) .
             substr('000' . dechex((int) $now[5]), -4);
     }
-
 
     /**
      * 当客户端连接时触发
@@ -265,7 +262,6 @@ class Events
                 ->where("flag=:flag and pwd=:pwd and psn=:psn")
                 ->bindValues(array('flag' => 1, 'psn' => $psn, 'pwd' => $pwd))
                 ->row();
-            var_dump($entity);
             if ($entity) {
                 //登入，初始化session參數
                 $_SESSION += $entity;
@@ -277,7 +273,7 @@ class Events
                 $_SESSION['record'] = array_fill_keys($datakeys[$entity['sort']], null);
                 $_SESSION += array('recordindex' => 0, 'recordcount' => 0, 'cyclecount' => 0, 'lastrecord' => 0, 'lastcycle' => 0, 'last' => 0);
                 //绑定Uid,group
-                //  Gateway::bindUid($client_id,$entity['id']);
+                //  Gateway::bindUid($client_id,$entity['psn']);
                 //  Gateway::joinGroup($client_id,$entity['sort']);
             } else {
                 //登出
@@ -340,15 +336,19 @@ class Events
             }
         }
         //TCPSERVER
-        elseif ($hexa['a'] == 0x5A && $data[1] == 0xA5) { }
+        elseif ($hexa['a'] == 0x5A && $data[1] == 0xA5) {
+            
+        }
 
         //向SV发送位置信息
-        if ($_SESSION['gpscount'] == 1 && $_SESSION['connectbegin'] != '') {
-            $gpsmsg = '';
-            $sv->send();
+        if ($_SESSION['sort']==1 && $_SESSION['gpscount'] == 1 && $_SESSION['connectbegin'] != '') {
+            Events::tcpGps();
         }
         //向SV发送状态信息
-        if (1) { }
+        if ($_SESSION['sort']==1 && $_SESSION['recordcount'])
+        {
+            Events::tcpRecord($_SESSION['psn'],0);
+        }
         //向SV发送烘干信息
         if (1) { }
     }
@@ -450,25 +450,76 @@ class Events
         $record['timersetting'] = $record['timersetting'] * 10;
         return $record;
     }
-    public static function svConnectFmt($data)
-    { }
-    public static function svRecordFmt($data)
+    public static function tcpGps()
     {
-        $record = $data;
-        $record['targetmst'] = $record['targetmst'] > 0 ? ($record['targetmst'] / 10) : $record['targetmst'];
-        $record['mstcorrection'] = $record['mstcorrection'] / 10;
-        $record['currentmst'] = $record['currentmst'] / 10;
-        $record['mstvar'] = $record['mstvar'] / 100;
-        $record['operatinghour'] = $record['operatinghour1'] * 65536 / 3600 + $record['operatinghour2'] / 3600;
-        unset($record['operatinghour1']);
-        unset($record['operatinghour2']);
-        $record['operatedhour'] = $record['operatedhour1'] * 10000 + $record['operatedhour2'];
-        unset($record['operatedhour1']);
-        unset($record['operatedhour2']);
-        $record['timersetting'] = $record['timersetting'] * 10;
-        return $record;
+        global $sv;
+        $data = array(
+            'run' => '0000', 'operating' => '0005', 'grain' => '0004',
+            'hotairtmp' => '00000000', 'outsidetmp' => '00000000',
+            'status' => '0000', 'alert' => '0000', 'datetime' => Events::hexDateTime()
+        );
+        if($psn == $_SESSION['psn']){
+            $session = $_SESSION;
+        }else if (Gateway::isUidOnline($psn)) {
+            $session = Gateway::getSession(Gateway::getClientIdByUid($psn));
+        }
+        if ($session) {
+            $data['run'] = '0001';
+            $data['operating'] = dechex($session['operating']);
+            $data['grain'] = dechex($session['grain']);
+            $data['hotairtmp'] = dechex($session['hotairtmp']);
+            $data['outsidetmp'] = dechex($session['outsidetmp']);
+            $data['status'] = dechex($session['status']);
+            $data['alert'] = deshex($session['alert']);
+        }
+        $head = array('psn'=>dechex($_SESSION['psn']),'sort'=>'0001','io'=>'00','sn'=>getSvSn(),'len'=>'001E');
+        
+        $msg = pack(
+            "H4H4H4H4H2H4H8"."H4H4H4H8H8H8H4H4H24",
+            '5aaf','0003', $head['psn'],$head['sort'],$head['io'],$head['sn'],$head['len'],
+            $data['run'],$data['operating'],$data['grain'],
+            $data['currentmst'],$data['hotairtmp'],$data['outsidetmp'],
+            $data['status'],$data['alert'],$data['datetime']
+        );
+        $sv->send($msg);
     }
-    public static function svCycleFmt($data)
+    public static function tcpRecord($psn,$io)
+    {
+        global $sv;
+        $data = array(
+            'run' => '0000', 'operating' => '0005', 'grain' => '0004',
+            'hotairtmp' => '00000000', 'outsidetmp' => '00000000',
+            'status' => '0000', 'alert' => '0000', 'datetime' => Events::hexDateTime()
+        );
+        if($psn == $_SESSION['psn']){
+            $session = $_SESSION;
+        }else if (Gateway::isUidOnline($psn)) {
+            $session = Gateway::getSession(Gateway::getClientIdByUid($psn));
+        }
+        if ($session) {
+            $data['run'] = '0001';
+            $data['operating'] = dechex($session['operating']);
+            $data['grain'] = dechex($session['grain']);
+            $data['hotairtmp'] = dechex($session['hotairtmp']);
+            $data['outsidetmp'] = dechex($session['outsidetmp']);
+            $data['status'] = dechex($session['status']);
+            $data['alert'] = deshex($session['alert']);
+        }
+        $head = array('psn'=>dechex($psn),'sort'=>'0002','io'=>'00','sn'=>getSvSn(),'len'=>'001E');
+        if($io == 1){
+            $head['sort']='0004';
+            $head['io']='01';
+        }
+        $msg = pack(
+            "H4H4H4H4H2H4H8"."H4H4H4H8H8H8H4H4H24",
+            '5aaf','0003', $head['psn'],$head['sort'],$head['io'],$head['sn'],$head['len'],
+            $data['run'],$data['operating'],$data['grain'],
+            $data['currentmst'],$data['hotairtmp'],$data['outsidetmp'],
+            $data['status'],$data['alert'],$data['datetime']
+        );
+        $sv->send($msg);
+    }
+    public static function tcpCycle($data)
     {
         $cycle = $data;
 
