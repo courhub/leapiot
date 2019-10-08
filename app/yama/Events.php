@@ -156,11 +156,23 @@ class Events
                     }
                 }
                 $msg = pack(
-                    "H4H4H4H4H2H4H8"."H4H4H4H8H8H8H4H4H24",
-                    '5aaf','0003', $svh['psn'],'0004','0001',$svh['sn'],'001E',
-                    $data['run'],$data['operating'],$data['grain'],
-                    $data['currentmst'],$data['hotairtmp'],$data['outsidetmp'],
-                    $data['status'],$data['alert'],$data['datetime']
+                    "H4H4H4H4H2H4H8" . "H4H4H4H8H8H8H4H4H24",
+                    '5aaf',
+                    '0003',
+                    $svh['psn'],
+                    '0004',
+                    '0001',
+                    $svh['sn'],
+                    '001E',
+                    $data['run'],
+                    $data['operating'],
+                    $data['grain'],
+                    $data['currentmst'],
+                    $data['hotairtmp'],
+                    $data['outsidetmp'],
+                    $data['status'],
+                    $data['alert'],
+                    $data['datetime']
                 );
                 $sv->send($msg);
             }
@@ -257,7 +269,7 @@ class Events
         if ($head == '@@@') {
             $psn = hexdec(substr($data, 3, 4));
             $pwd = substr($data, 7);
-            $entity = $db->select('id,psn,sort,addr')
+            $entity = $db->select("id,psn,sort,addr,spec->'$.model' AS model,spec->'$.tonnage' AS tonnage")
                 ->from('ym_entity')
                 ->where("flag=:flag and pwd=:pwd and psn=:psn")
                 ->bindValues(array('flag' => 1, 'psn' => $psn, 'pwd' => $pwd))
@@ -284,7 +296,6 @@ class Events
         //Dryer GPS包
         elseif ($head == '$GP') {
             $adata = explode(',', $data);
-            var_dump($adata);
             if ($adata[0] == '$GPRMC' && count($adata) >= 12 && $adata[2] == 'A') {
                 $lat = $adata[3];
                 $fLat = ($adata[4] == 'N' ? 1 : -1) * (int) substr($lat, 0, strlen($lat) - 8) + (float) substr($lat, -8) / 60;
@@ -301,7 +312,7 @@ class Events
                 $_SESSION['gpscount'] += 1;
             }
         }
-        //Dryer 心跳包  $$$0001 '字符串+PSN
+        //Dryer 心跳包  $$$
         elseif ($head == '$$$') {
             $_SESSION['heartcount'] += 1;
             if ($_SESSION['recordindex'] >= count($datakeys[$_SESSION['sort']])) {
@@ -322,10 +333,6 @@ class Events
             Events::sendRecordAddr($client_id);
             Events::saveRecord($client_id);
             Events::saveCycle($client_id);
-            var_dump($hexa);
-            var_dump(unpack("H4s", $crc16)['s']);
-            print_r("++++++++++++++++++++++");
-            var_dump($data);
         }
         //Dryer ERROR CODE
         elseif ($hexa['a'] . $hexa['f'] . $hexa['l'] == $_SESSION['addrh'] . '8301') {
@@ -335,22 +342,15 @@ class Events
                 $_SESSION['cyclecount'] += 1;
             }
         }
-        //TCPSERVER
-        elseif ($hexa['a'] == 0x5A && $data[1] == 0xA5) {
-            
-        }
 
         //向SV发送位置信息
-        if ($_SESSION['sort']==1 && $_SESSION['gpscount'] == 1 && $_SESSION['connectbegin'] != '') {
-            Events::tcpGps();
+        if ($_SESSION['sort'] == 1 && $_SESSION['gpscount'] == 1 && $_SESSION['connectbegin'] != '') {
+            Events::tcpGps($_SESSION['psn']);
         }
         //向SV发送状态信息
-        if ($_SESSION['sort']==1 && $_SESSION['recordcount'])
-        {
-            Events::tcpRecord($_SESSION['psn'],0);
+        if ($_SESSION['sort'] == 1 && $_SESSION['recordcount']) {
+            Events::tcpRecord($_SESSION['psn'], 0);
         }
-        //向SV发送烘干信息
-        if (1) { }
     }
 
     /**
@@ -362,12 +362,19 @@ class Events
         // 向所有人发送 
         //GateWay::sendToAll("$client_id logout\r\n");
         global $db;
-        $dt = (new DateTime())->format('Y-m-d H:i:s');
+        $now = (new DateTime())->format('Y-m-d H:i:s');
         if ($_SESSION['lastrecord'] > 0) {
-            $db->update('ym_record')->cols(array('tdate' => $dt))->where('id = 0' . $_SESSION['lastrecord'])->query();
+            $db->update('ym_record')->cols(array('tdate' => $now))->where('id = 0' . $_SESSION['lastrecord'])->query();
         }
         if ($_SESSION['lastcycle'] > 0) {
-            $db->update('ym_cycle')->cols(array('edate' => $dt, 'type' => 2, 'erecord' => $_SESSION['lastrecord']))->query();
+            $db->update('ym_cycle')->cols(array('edate' => $now, 'type' => 2, 'erecord' => $_SESSION['lastrecord']))->query();
+            $cid = $db->select('id')->from('ym_cycle')
+            ->where("stage=1 and flag=1 and erecord=:erecord and entity=:entity")
+            ->bindValues(array('entity' => $_SESSION['entity'],'erecord'=>$_SESSION['lastrecord']))
+            ->single();
+            if($cid){
+                Events::tcpCycle($cid);
+            }
         }
         session_destroy();
     }
@@ -431,6 +438,7 @@ class Events
             if ($insert_id) {
                 $_SESSION['lastcycle'] = $insert_id;
             }
+            Events::tcpCycle($insert_id);
         }
     }
 
@@ -450,80 +458,152 @@ class Events
         $record['timersetting'] = $record['timersetting'] * 10;
         return $record;
     }
-    public static function tcpGps()
+    public static function tcpGps($psn)
     {
         global $sv;
-        $data = array(
-            'run' => '0000', 'operating' => '0005', 'grain' => '0004',
-            'hotairtmp' => '00000000', 'outsidetmp' => '00000000',
-            'status' => '0000', 'alert' => '0000', 'datetime' => Events::hexDateTime()
-        );
-        if($psn == $_SESSION['psn']){
-            $session = $_SESSION;
-        }else if (Gateway::isUidOnline($psn)) {
+        $data = array('model' => '0000', 'tonnage' => '0000', 'lond' => '00', 'lonf' => '00', 'lonm' => '00', 'latd' => '00', 'latf' => '00', 'latm' => '00');
+        if (Gateway::isUidOnline($psn)) {
             $session = Gateway::getSession(Gateway::getClientIdByUid($psn));
         }
         if ($session) {
-            $data['run'] = '0001';
-            $data['operating'] = dechex($session['operating']);
-            $data['grain'] = dechex($session['grain']);
-            $data['hotairtmp'] = dechex($session['hotairtmp']);
-            $data['outsidetmp'] = dechex($session['outsidetmp']);
-            $data['status'] = dechex($session['status']);
-            $data['alert'] = deshex($session['alert']);
+            $data['model'] = dechex($session['model']);
+            $data['tonnage'] = dechex($session['tonnage']);
+            $lon = $session['gps']['lon'];
+            $lond = (int) $lon;
+            $lonf = (int) ($lon * 60) - $lond * 60;
+            $lonm = (int) ($lon * 3600) - $lond * 3600 - $lonf * 60;
+            $data['lond'] = dechex($lond);
+            $data['lonf'] = dechex($lonf);
+            $data['lonm'] = dechex($lonm);
+            $lat = $session['gps']['lat'];
+            $latd = (int) $lat;
+            $latf = (int) ($lat * 60) - $latd * 60;
+            $latm = (int) ($lat * 3600) - $latd * 3600 - $latf * 60;
+            $data['latd'] = dechex($latd);
+            $data['latf'] = dechex($latf);
+            $data['latm'] = dechex($latm);
         }
-        $head = array('psn'=>dechex($_SESSION['psn']),'sort'=>'0001','io'=>'00','sn'=>getSvSn(),'len'=>'001E');
-        
-        $msg = pack(
-            "H4H4H4H4H2H4H8"."H4H4H4H8H8H8H4H4H24",
-            '5aaf','0003', $head['psn'],$head['sort'],$head['io'],$head['sn'],$head['len'],
-            $data['run'],$data['operating'],$data['grain'],
-            $data['currentmst'],$data['hotairtmp'],$data['outsidetmp'],
-            $data['status'],$data['alert'],$data['datetime']
-        );
-        $sv->send($msg);
-    }
-    public static function tcpRecord($psn,$io)
-    {
-        global $sv;
-        $data = array(
-            'run' => '0000', 'operating' => '0005', 'grain' => '0004',
-            'hotairtmp' => '00000000', 'outsidetmp' => '00000000',
-            'status' => '0000', 'alert' => '0000', 'datetime' => Events::hexDateTime()
-        );
-        if($psn == $_SESSION['psn']){
-            $session = $_SESSION;
-        }else if (Gateway::isUidOnline($psn)) {
-            $session = Gateway::getSession(Gateway::getClientIdByUid($psn));
-        }
-        if ($session) {
-            $data['run'] = '0001';
-            $data['operating'] = dechex($session['operating']);
-            $data['grain'] = dechex($session['grain']);
-            $data['hotairtmp'] = dechex($session['hotairtmp']);
-            $data['outsidetmp'] = dechex($session['outsidetmp']);
-            $data['status'] = dechex($session['status']);
-            $data['alert'] = deshex($session['alert']);
-        }
-        $head = array('psn'=>dechex($psn),'sort'=>'0002','io'=>'00','sn'=>getSvSn(),'len'=>'001E');
-        if($io == 1){
-            $head['sort']='0004';
-            $head['io']='01';
-        }
-        $msg = pack(
-            "H4H4H4H4H2H4H8"."H4H4H4H8H8H8H4H4H24",
-            '5aaf','0003', $head['psn'],$head['sort'],$head['io'],$head['sn'],$head['len'],
-            $data['run'],$data['operating'],$data['grain'],
-            $data['currentmst'],$data['hotairtmp'],$data['outsidetmp'],
-            $data['status'],$data['alert'],$data['datetime']
-        );
-        $sv->send($msg);
-    }
-    public static function tcpCycle($data)
-    {
-        $cycle = $data;
+        $sn = Events::getSvSn();
+        $head = array('psn' => dechex($session['psn']), 'sort' => '0001', 'io' => '00', 'sn' => dechex($sn), 'len' => '000E');
 
-        return $cycle;
+        $msg = pack(
+            "H4H4H4H4H2H4H8" . "H4H4H2H2H2H2H2H2H8",
+            '5aaf',
+            '0003',
+            $head['psn'],
+            $head['sort'],
+            $head['io'],
+            $head['sn'],
+            $head['len'],
+            $data['model'],
+            $data['tonnage'],
+            $data['lond'],
+            $data['lonf'],
+            $data['lonf'],
+            $data['latd'],
+            $data['latf'],
+            $data['latm'],
+            '00000000'
+        );
+        Events::addSvPipe($sn, $msg);
+        $sv->send($msg);
+    }
+    public static function tcpRecord($psn, $io)
+    {
+        global $sv;
+        $data = array(
+            'run' => '0000', 'operating' => '0005', 'grain' => '0004',
+            'hotairtmp' => '00000000', 'outsidetmp' => '00000000',
+            'status' => '0000', 'alert' => '0000', 'datetime' => Events::hexDateTime()
+        );
+        if (Gateway::isUidOnline($psn)) {
+            $session = Gateway::getSession(Gateway::getClientIdByUid($psn));
+        }
+        if ($session) {
+            $data['run'] = '0001';
+            $data['operating'] = dechex($session['operating']);
+            $data['grain'] = dechex($session['grain']);
+            $data['hotairtmp'] = dechex($session['hotairtmp']);
+            $data['outsidetmp'] = dechex($session['outsidetmp']);
+            $data['status'] = dechex($session['status']);
+            $data['alert'] = deshex($session['alert']);
+        }
+        $sn = Events::getSvSn();
+        $head = array('psn' => dechex($psn), 'sort' => '0002', 'io' => '00', 'sn' => dechex($sn), 'len' => '001E');
+        if ($io == 1) {
+            $head['sort'] = '0004';
+            $head['io'] = '01';
+        }
+        $msg = pack(
+            "H4H4H4H4H2H4H8" . "H4H4H4H8H8H8H4H4H24",
+            '5aaf',
+            '0003',
+            $head['psn'],
+            $head['sort'],
+            $head['io'],
+            $head['sn'],
+            $head['len'],
+            $data['run'],
+            $data['operating'],
+            $data['grain'],
+            $data['currentmst'],
+            $data['hotairtmp'],
+            $data['outsidetmp'],
+            $data['status'],
+            $data['alert'],
+            $data['datetime']
+        );
+        if ($io == 0) {
+            Events::addSvPipe($sn, $msg);
+        }
+        $sv->send($msg);
+    }
+    public static function tcpCycle($cid)
+    {
+        global $db, $sv;
+
+        $data = $db->select("ym_entity.id AS id,ym_entity.psn AS psn,ym_entity.spec->'$.model' AS model,ym_entity.spec->'$.tonnage' AS tonnage,date_format(ym_cycle.bdate,'%Y%m%d%H%i') bd,date_format(ym_cycle.edate,'%Y%m%d%H%i') ed,round((ym_cycle.edate-ym_cycle.bdate)/10000*60) AS mins")
+            ->from('ym_cycle')->innerJoin('ym_entity', 'ym_cycle.entity = ym_entity.id')
+            ->where("stage=1 and flag=:flag and id=:cid")
+            ->bindValues(array('flag' => 1, 'cid' => $cid))
+            ->row();
+        if ($data) {
+            $data['count'] = $db->select("count(*)")
+                ->from('ym_cycle')
+                ->where("stage=1 and flag=:flag and entity=:entity")
+                ->bindValues(array('flag' => 1, 'entity' => $data['entity']))
+                ->single();
+
+            $sn = Events::getSvSn();
+            $head = array('psn' => dechex($data['psn']), 'sort' => '0003', 'io' => '00', 'sn' => dechex($sn), 'len' => '001E');
+
+            $msg = pack(
+                "H4H4H4H4H2H4H8" . "H4H4H4H8H4H4H4H4H4H4H4H4H4H4",
+                '5aaf',
+                '0003',
+                $head['psn'],
+                $head['sort'],
+                $head['io'],
+                $head['sn'],
+                $head['len'],
+                dechex($data['model']),
+                dechex($data['tonnage']),
+                dechex($data['count']),
+                dechex($data['mins']),
+                dechex((int) substr($data['bd'], 0, 4)),
+                dechex((int) substr($data['bd'], 4, 2)),
+                dechex((int) substr($data['bd'], 6, 2)),
+                dechex((int) substr($data['bd'], 8, 2)),
+                dechex((int) substr($data['bd'], 10, 2)),
+                dechex((int) substr($data['ed'], 0, 4)),
+                dechex((int) substr($data['ed'], 4, 2)),
+                dechex((int) substr($data['ed'], 6, 2)),
+                dechex((int) substr($data['ed'], 8, 2)),
+                dechex((int) substr($data['ed'], 10, 2))
+            );
+            Events::addSvPipe($sn, $msg);
+            $sv->send($msg);
+        }
     }
 }
 
