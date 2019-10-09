@@ -122,3 +122,4 @@ var_dump( array_slice($data,0,1));
 //$dt = new DateTime();
 //var_dump($_SESSION['now']->format('Y-m-d H:i:s.S'));
 var_dump($_SESSION);
+Events::tcpGps(1);

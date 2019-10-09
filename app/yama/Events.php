@@ -127,8 +127,7 @@ class Events
             if ($svh['head'] != '5aa5' || hexdec($svh['factory']) != $config['tcp']['fsn']) {
                 //非法信息，不予處理
             } else if ($svh['io'] == '01' && $svh['result'] == '0000') {
-                //應答信息，正確結果
-                //刪除傳輸緩存中的信息
+                //應答信息，正確結果；刪除傳輸緩存中的信息
                 $key = hexdec($svh['sn']);
                 if (array_key_exists($key, $svpipe)) {
                     unset($svpipe[$key]);
@@ -137,44 +136,7 @@ class Events
                 //應答信息，錯誤結果
             } else if ($svh['io'] == '00' && $svh['sort'] == '0004') {
                 //查詢設備狀態
-                $psn = hexdec($svh['psn']);
-                $data = array(
-                    'run' => '0000', 'operating' => '0005', 'grain' => '0004',
-                    'hotairtmp' => '00000000', 'outsidetmp' => '00000000',
-                    'status' => '0000', 'alert' => '0000', 'datetime' => Events::hexDateTime()
-                );
-                if (Gateway::isUidOnline($psn)) {
-                    $session = Gateway::getSession(Gateway::getClientIdByUid($psn));
-                    if ($session) {
-                        $data['run'] = '0001';
-                        $data['operating'] = dechex($session['operating']);
-                        $data['grain'] = dechex($session['grain']);
-                        $data['hotairtmp'] = dechex($session['hotairtmp']);
-                        $data['outsidetmp'] = dechex($session['outsidetmp']);
-                        $data['status'] = dechex($session['status']);
-                        $data['alert'] = deshex($session['alert']);
-                    }
-                }
-                $msg = pack(
-                    "H4H4H4H4H2H4H8" . "H4H4H4H8H8H8H4H4H24",
-                    '5aaf',
-                    '0003',
-                    $svh['psn'],
-                    '0004',
-                    '0001',
-                    $svh['sn'],
-                    '001E',
-                    $data['run'],
-                    $data['operating'],
-                    $data['grain'],
-                    $data['currentmst'],
-                    $data['hotairtmp'],
-                    $data['outsidetmp'],
-                    $data['status'],
-                    $data['alert'],
-                    $data['datetime']
-                );
-                $sv->send($msg);
+                Events::tcpRecord(hexdec($svh['psn']), 1);
             }
         };
         $sv->onClose = function ($sv) {
@@ -226,8 +188,8 @@ class Events
         // Gateway::sendToClient($client_id, "Hello $client_id\r\n");
         // 向所有人发送
         // Gateway::sendToAll("$client_id login\r\n");
-        // session_destroy();
-        // session_start();
+        session_destroy();
+        session_start();
         $_SESSION['id'] = 0;
         $_SESSION['clientid'] = $client_id;
         $_SESSION['sort'] = 0;
@@ -249,10 +211,8 @@ class Events
      */
     public static function onMessage($client_id, $message)
     {
-        global $dataaddr;
         global $datakeys;
         global $db;
-        global $sv;
         if (!array_key_exists('sort', $_SESSION)) {
             Events::onConnect($client_id);
         }
@@ -285,8 +245,8 @@ class Events
                 $_SESSION['record'] = array_fill_keys($datakeys[$entity['sort']], null);
                 $_SESSION += array('recordindex' => 0, 'recordcount' => 0, 'cyclecount' => 0, 'lastrecord' => 0, 'lastcycle' => 0, 'last' => 0);
                 //绑定Uid,group
-                //  Gateway::bindUid($client_id,$entity['psn']);
-                //  Gateway::joinGroup($client_id,$entity['sort']);
+                Gateway::bindUid($client_id, $entity['psn']);
+                Gateway::joinGroup($client_id, $entity['sort']);
             } else {
                 //登出
                 session_destroy();
@@ -321,7 +281,7 @@ class Events
                 $_SESSION['recordindex'] = 0;
             }
             //发送第一笔数据请求
-            //Events::sendRecordAddr($client_id);
+            Events::sendRecordAddr($client_id);
         }
         //Dryer 数据    
         elseif ($hexa['a'] . $hexa['f'] . $hexa['l'] == $_SESSION['addrh'] . '0302') {
@@ -369,10 +329,10 @@ class Events
         if ($_SESSION['lastcycle'] > 0) {
             $db->update('ym_cycle')->cols(array('edate' => $now, 'type' => 2, 'erecord' => $_SESSION['lastrecord']))->query();
             $cid = $db->select('id')->from('ym_cycle')
-            ->where("stage=1 and flag=1 and erecord=:erecord and entity=:entity")
-            ->bindValues(array('entity' => $_SESSION['entity'],'erecord'=>$_SESSION['lastrecord']))
-            ->single();
-            if($cid){
+                ->where("stage=1 and flag=1 and erecord=:erecord and entity=:entity")
+                ->bindValues(array('entity' => $_SESSION['entity'], 'erecord' => $_SESSION['lastrecord']))
+                ->single();
+            if ($cid) {
                 Events::tcpCycle($cid);
             }
         }
@@ -464,27 +424,29 @@ class Events
         $data = array('model' => '0000', 'tonnage' => '0000', 'lond' => '00', 'lonf' => '00', 'lonm' => '00', 'latd' => '00', 'latf' => '00', 'latm' => '00');
         if (Gateway::isUidOnline($psn)) {
             $session = Gateway::getSession(Gateway::getClientIdByUid($psn));
+        } else {
+            $session = array();
         }
         if ($session) {
-            $data['model'] = dechex($session['model']);
-            $data['tonnage'] = dechex($session['tonnage']);
+            $data['model'] = substr('0000' . dechex($session['model']), -4);
+            $data['tonnage'] = substr('0000' . dechex($session['tonnage']), -4);
             $lon = $session['gps']['lon'];
             $lond = (int) $lon;
             $lonf = (int) ($lon * 60) - $lond * 60;
-            $lonm = (int) ($lon * 3600) - $lond * 3600 - $lonf * 60;
-            $data['lond'] = dechex($lond);
-            $data['lonf'] = dechex($lonf);
-            $data['lonm'] = dechex($lonm);
+            $lonm = (int) round($lon * 3600, 0) - $lond * 3600 - $lonf * 60;
+            $data['lond'] = substr('00' . dechex($lond), -2);
+            $data['lonf'] = substr('00' . dechex($lonf), -2);
+            $data['lonm'] = substr('00' . dechex($lonm), -2);
             $lat = $session['gps']['lat'];
             $latd = (int) $lat;
             $latf = (int) ($lat * 60) - $latd * 60;
-            $latm = (int) ($lat * 3600) - $latd * 3600 - $latf * 60;
-            $data['latd'] = dechex($latd);
-            $data['latf'] = dechex($latf);
-            $data['latm'] = dechex($latm);
+            $latm = (int) round($lat * 3600, 0) - $latd * 3600 - $latf * 60;
+            $data['latd'] = substr('00' . dechex($latd), -2);
+            $data['latf'] = substr('00' . dechex($latf), -2);
+            $data['latm'] = substr('00' . dechex($latm), -2);
         }
         $sn = Events::getSvSn();
-        $head = array('psn' => dechex($session['psn']), 'sort' => '0001', 'io' => '00', 'sn' => dechex($sn), 'len' => '000E');
+        $head = array('psn' => substr('0000' . dechex($psn), -4), 'sort' => '0001', 'io' => '00', 'sn' => substr('0000' . dechex($sn), -4), 'len' => '0000000E');
 
         $msg = pack(
             "H4H4H4H4H2H4H8" . "H4H4H2H2H2H2H2H2H8",
@@ -499,7 +461,7 @@ class Events
             $data['tonnage'],
             $data['lond'],
             $data['lonf'],
-            $data['lonf'],
+            $data['lonm'],
             $data['latd'],
             $data['latf'],
             $data['latm'],
@@ -518,18 +480,20 @@ class Events
         );
         if (Gateway::isUidOnline($psn)) {
             $session = Gateway::getSession(Gateway::getClientIdByUid($psn));
+        } else {
+            $session = array();
         }
         if ($session) {
             $data['run'] = '0001';
-            $data['operating'] = dechex($session['operating']);
-            $data['grain'] = dechex($session['grain']);
-            $data['hotairtmp'] = dechex($session['hotairtmp']);
-            $data['outsidetmp'] = dechex($session['outsidetmp']);
-            $data['status'] = dechex($session['status']);
-            $data['alert'] = deshex($session['alert']);
+            $data['operating'] = substr('0000' . dechex($session['operating']), -4);
+            $data['grain'] = substr('0000' . dechex($session['grain']), -4);
+            $data['hotairtmp'] = substr('00000000' . dechex((int) round($session['hotairtmp'] * 10, 0)), -8);
+            $data['outsidetmp'] = substr('00000000' . dechex((int) round($session['outsidetmp'] * 10, 0)), -8);
+            $data['status'] = substr('0000' . dechex($session['status']), -4);
+            $data['alert'] = substr('0000' . deshex($session['alert']), -4);
         }
         $sn = Events::getSvSn();
-        $head = array('psn' => dechex($psn), 'sort' => '0002', 'io' => '00', 'sn' => dechex($sn), 'len' => '001E');
+        $head = array('psn' => substr('0000' . dechex($psn), -4), 'sort' => '0002', 'io' => '00', 'sn' => substr('0000' . dechex($sn), -4), 'len' => '0000001E');
         if ($io == 1) {
             $head['sort'] = '0004';
             $head['io'] = '01';
@@ -553,6 +517,7 @@ class Events
             $data['alert'],
             $data['datetime']
         );
+
         if ($io == 0) {
             Events::addSvPipe($sn, $msg);
         }
@@ -562,20 +527,20 @@ class Events
     {
         global $db, $sv;
 
-        $data = $db->select("ym_entity.id AS id,ym_entity.psn AS psn,ym_entity.spec->'$.model' AS model,ym_entity.spec->'$.tonnage' AS tonnage,date_format(ym_cycle.bdate,'%Y%m%d%H%i') bd,date_format(ym_cycle.edate,'%Y%m%d%H%i') ed,round((ym_cycle.edate-ym_cycle.bdate)/10000*60) AS mins")
+        $data = $db->select("ym_entity.id AS id,ym_entity.psn AS psn,round(ym_entity.spec->'$.model') AS model,round(ym_entity.spec->'$.tonnage') AS tonnage,date_format(ym_cycle.bdate,'%Y%m%d%H%i') bd,date_format(ym_cycle.edate,'%Y%m%d%H%i') ed,cast((ym_cycle.edate-ym_cycle.bdate)/10000*60 as signed) AS mins")
             ->from('ym_cycle')->innerJoin('ym_entity', 'ym_cycle.entity = ym_entity.id')
-            ->where("stage=1 and flag=:flag and id=:cid")
-            ->bindValues(array('flag' => 1, 'cid' => $cid))
+            ->where("ym_entity.flag=1 and ym_cycle.stage=1 and ym_cycle.flag=1 and ym_cycle.id=:cid")
+            ->bindValues(array('cid' => $cid))
             ->row();
         if ($data) {
             $data['count'] = $db->select("count(*)")
                 ->from('ym_cycle')
-                ->where("stage=1 and flag=:flag and entity=:entity")
-                ->bindValues(array('flag' => 1, 'entity' => $data['entity']))
+                ->where("stage=1 and flag=1 and entity=:entity")
+                ->bindValues(array('entity' => $data['id']))
                 ->single();
 
             $sn = Events::getSvSn();
-            $head = array('psn' => dechex($data['psn']), 'sort' => '0003', 'io' => '00', 'sn' => dechex($sn), 'len' => '001E');
+            $head = array('psn' => substr('0000' . dechex($data['psn']), -4), 'sort' => '0003', 'io' => '00', 'sn' => substr('0000' . dechex($sn), -4), 'len' => '0000001E');
 
             $msg = pack(
                 "H4H4H4H4H2H4H8" . "H4H4H4H8H4H4H4H4H4H4H4H4H4H4",
@@ -586,20 +551,20 @@ class Events
                 $head['io'],
                 $head['sn'],
                 $head['len'],
-                dechex($data['model']),
-                dechex($data['tonnage']),
-                dechex($data['count']),
-                dechex($data['mins']),
-                dechex((int) substr($data['bd'], 0, 4)),
-                dechex((int) substr($data['bd'], 4, 2)),
-                dechex((int) substr($data['bd'], 6, 2)),
-                dechex((int) substr($data['bd'], 8, 2)),
-                dechex((int) substr($data['bd'], 10, 2)),
-                dechex((int) substr($data['ed'], 0, 4)),
-                dechex((int) substr($data['ed'], 4, 2)),
-                dechex((int) substr($data['ed'], 6, 2)),
-                dechex((int) substr($data['ed'], 8, 2)),
-                dechex((int) substr($data['ed'], 10, 2))
+                substr('0000' . dechex($data['model']), -4),
+                substr('0000' . dechex($data['tonnage']), -4),
+                substr('0000' . dechex($data['count']), -4),
+                substr('00000000' . dechex($data['mins']), -8),
+                substr('0000' . dechex((int) substr($data['bd'], 0, 4)), -4),
+                substr('0000' . dechex((int) substr($data['bd'], 4, 2)), -4),
+                substr('0000' . dechex((int) substr($data['bd'], 6, 2)), -4),
+                substr('0000' . dechex((int) substr($data['bd'], 8, 2)), -4),
+                substr('0000' . dechex((int) substr($data['bd'], 10, 2)), -4),
+                substr('0000' . dechex((int) substr($data['ed'], 0, 4)), -4),
+                substr('0000' . dechex((int) substr($data['ed'], 4, 2)), -4),
+                substr('0000' . dechex((int) substr($data['ed'], 6, 2)), -4),
+                substr('0000' . dechex((int) substr($data['ed'], 8, 2)), -4),
+                substr('0000' . dechex((int) substr($data['ed'], 10, 2)), -4)
             );
             Events::addSvPipe($sn, $msg);
             $sv->send($msg);
