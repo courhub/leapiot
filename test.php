@@ -52,9 +52,10 @@ use \Workerman\Worker;
  * 2.如果你提供的参数比 $format 要求的少，pack 假设缺的都是空值。如果你提供的参数比 $format 要求的多，那么多余的参数被忽略
  */
 
+
 //註冊包@@@+ID+PWD
-$message = "@@@00017162485b30dbe2644067b6ebc5ebe0af";
-//心跳包$$$$，及設備ID  format=a*
+//$message = "@@@00017162485b30dbe2644067b6ebc5ebe0af";
+//心跳包$$$$  format=a*
 //$message = "$$$";
 //$message = unpack("C*",$message);
 //$message = pack("C*",0x64,0x37,0x38,0x04,0x04,0x04,0x04,0x04);
@@ -69,20 +70,36 @@ $message = "@@@00017162485b30dbe2644067b6ebc5ebe0af";
 //$message = pack("H*",$message);
 
 //GPS   format=a*
-$message = '$GPRMC,225530.000,A,3637.26040,N,11700.56340,E,10.000,97.17,220512,,,D*57';
-var_dump($message);
+//$message = '$GPRMC,225530.000,A,3637.26040,N,11700.56340,E,10.000,97.17,220512,,,D*57';
 //var_dump(pack("H*",$message)); 
-$client_id = 'FFFF0001CCCC0001';
 
 /**
  * TCP SERVER
  */
-$message = '5AA50001000100030100320000000E000007E300070018001100190014';
+//$message = '5AA50001000100030100320000000E000007E300070018001100190014';
 
-var_dump($message);
-$message = pack("H*",$message);
+//$message = pack("H*",$message);
 //$amsg = unpack("a*", $message);
-
+$amsgs = array(
+    'ini'     => pack('a*', '@@@00017162485b30dbe2644067b6ebc5ebe0af'),
+    'heart'   => pack('a*', '$$$'),
+    'gps'     => pack('a*', '$GPRMC,225530.000,A,3637.26040,N,11700.56340,E,10.000,97.17,220512,,,D*57'),
+    'addr'    => pack('H*', '0103000C00014409'),
+    'data'    => pack('H*', '0103020000B844'),
+    
+    'logt'    => pack('H*', '5aa50003000100010000010000000e0001000f17171e171a1c00000000'),
+    'logr'    => pack('H*', '5aa50003000100010100010000000e000007e3000a000a0009000f0014'),
+    'statust' => pack('H*', '5aa50003000100020000010000001e00010001000000000000000000000000000007E3000a000a0009000f0014'),
+    'dryt'    => pack('H*', '5aa50003000100030000320000001e0001000f00000000000007e3000a000a0009000f07e3000a000a000d000f'),
+    'dryr'    => pack('H*', '5aa50003000100030100320000000e000007e3000a000a000d000f0014'),
+    'checkt'  => pack('H*', '5aa500030001000400003600000000'),
+    'checkr'  => pack('H*', '5aa50003000100040100360000001e00010001000000000000000000000000000007E3000a000a0009000f0014')
+);
+var_dump($amsgs);
+$message = $amsgs['gps'];
+$client_id = 'FFFF0001CCCC0001';
+Events::onWorkerStart(null);
+Events::onMessage($client_id,$message);
 //$data = join($amsg);
 //$head = substr($data, 0, 3);
 //$eid = substr($data, 3, 4);
@@ -92,34 +109,10 @@ $message = pack("H*",$message);
 //Events::connServer();
 //Events::onConnect($client_id);
 
-var_dump($message);
+//$svh  = unpack("H4head/H4factory/H4psn/H4sort/H2io/H4sn/H8len/H4result/H*datatime", $message);    //十六進制字符串數組a-address；f-function;l-length;d-data;c-crc16
 
-$svh  = unpack("H4head/H4factory/H4psn/H4sort/H2io/H4sn/H8len/H4result/H*datatime", $message);    //十六進制字符串數組a-address；f-function;l-length;d-data;c-crc16
-var_dump($svh);
-var_dump(hexdec($svh['psn']));
-var_dump(Events::hexDateTime());
-
-$data = array(
-    'run' => '0000', 'operating' => '0005', 'grain' => '0004',
-    'currentmst' => '00000000', 'hotairtmp' => '00000000', 'outsidetmp' => '00000000',
-    'status' => '0000', 'alert' => '0000', 'datetime' => Events::hexDateTime()
-);
-echo '=========================';
-$fmt = "H4H4H4H4H2H4H8"."H4H4H4H8H8H8H4H4H24";
-$msg = pack(
-    $fmt,
-    '5aa5','0003', $svh['psn'],'0004','0001', $svh['sn'],'00000022',
-    $data['run'], $data['operating'], $data['grain'],
-    $data['currentmst'], $data['hotairtmp'], $data['outsidetmp'],
-    $data['status'], $data['alert'], $data['datetime']
-);
-var_dump(Events::getSvSn());
-$data = unpack("H4h/H4t/Hpsn/H4h1/H2sn", $msg);
-var_dump( array_slice($data,0,1));
 //Events::onMessage($client_id, $message);
 //Events::onClose($client_id);
 //Events::sendRecordAddr();
 //$dt = new DateTime();
-//var_dump($_SESSION['now']->format('Y-m-d H:i:s.S'));
 var_dump($_SESSION);
-Events::tcpGps(1);

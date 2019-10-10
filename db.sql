@@ -1,16 +1,16 @@
--- phpMyAdmin SQL Dump
+﻿-- phpMyAdmin SQL Dump
 -- version 4.8.5
 -- https://www.phpmyadmin.net/
 --
 -- 主機： 127.0.0.1:3306
--- 產生時間： 2019 年 09 月 18 日 09:58
+-- 產生時間： 2019 年 10 月 10 日 12:07
 -- 伺服器版本： 5.7.26
 -- PHP 版本： 7.2.18
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 SET AUTOCOMMIT = 0;
 START TRANSACTION;
-SET time_zone = "+00:00";
+SET time_zone = "+08:00";
 
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS `ym_entity` (
 --
 
 INSERT INTO `ym_entity` (`id`, `sort`, `model`, `org`, `status`, `csn`, `psn`, `pwd`, `addr`, `spec`, `lastgps`, `lastrecord`, `lastcycle`, `cdate`, `cuser`, `udate`, `uuser`, `flag`) VALUES
-(1, 1, '120H', 3, 1, 'HGJ001', 1, '7162485b30dbe2644067b6ebc5ebe0af', NULL, '', 1, 2, 1, '2019-09-12 16:15:03', 1, '2019-09-12 16:15:03', 1, b'1');
+(1, 1, '120H', 3, 1, 'HGJ001', 1, '7162485b30dbe2644067b6ebc5ebe0af', 1, '{\"model\":1,\"tonnage\":15}', 2, 2, 1, '2019-09-12 16:15:03', 1, '2019-09-12 16:15:03', 1, b'1');
 
 -- --------------------------------------------------------
 
@@ -133,20 +133,21 @@ CREATE TABLE IF NOT EXISTS `ym_gps` (
   `entity` int(11) NOT NULL,
   `lon` float NOT NULL COMMENT '经度,正为东半球,负为西半球.',
   `lat` float NOT NULL COMMENT '纬度,正为北半球,负为南半球.',
-  `velocity` int(11) NOT NULL COMMENT '速度,米/秒.',
-  `direction` int(11) NOT NULL COMMENT '方向.正北为0度.',
+  `velocity` float NOT NULL COMMENT '速度,米/秒.',
+  `direction` float NOT NULL COMMENT '方向.正北为0度.',
   `cdate` datetime NOT NULL,
   `type` char(1) NOT NULL COMMENT '定位态别:，A=自主定位，D=差分，E=估算，N=数据无效',
   PRIMARY KEY (`id`),
   KEY `entity` (`entity`) USING BTREE
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8;
 
 --
 -- 傾印資料表的資料 `ym_gps`
 --
 
 INSERT INTO `ym_gps` (`id`, `entity`, `lon`, `lat`, `velocity`, `direction`, `cdate`, `type`) VALUES
-(1, 1, 31.1111, 116.333, 3, 15, '2019-09-12 11:37:21', 'A');
+(1, 1, 116.333, 31.1111, 3, 15, '2019-09-12 11:37:21', 'A'),
+(2, 1, 117.009, 36.621, 5.14444, 97.17, '2019-10-10 20:02:48', 'D');
 
 --
 -- 觸發器 `ym_gps`

@@ -179,16 +179,10 @@ class Events
     /**
      * 当客户端连接时触发
      * 如果业务不需此回调可以删除onConnect
-     * 
      * @param int $client_id 连接id
      */
     public static function onConnect($client_id)
     {
-        // 向当前client_id发送数据 
-        // Gateway::sendToClient($client_id, "Hello $client_id\r\n");
-        // 向所有人发送
-        // Gateway::sendToAll("$client_id login\r\n");
-        session_destroy();
         session_start();
         $_SESSION['id'] = 0;
         $_SESSION['clientid'] = $client_id;
@@ -229,24 +223,24 @@ class Events
         if ($head == '@@@') {
             $psn = hexdec(substr($data, 3, 4));
             $pwd = substr($data, 7);
-            $entity = $db->select("id,psn,sort,addr,spec->'$.model' AS model,spec->'$.tonnage' AS tonnage")
+            $entity = $db->select("id,psn,sort,addr,cast(spec->'$.model' as signed) AS model,cast(spec->'$.tonnage' as signed) AS tonnage")
                 ->from('ym_entity')
                 ->where("flag=:flag and pwd=:pwd and psn=:psn")
                 ->bindValues(array('flag' => 1, 'psn' => $psn, 'pwd' => $pwd))
                 ->row();
             if ($entity) {
                 //登入，初始化session參數
-                $_SESSION += $entity;
+                $_SESSION = $entity + $_SESSION;
                 $_SESSION['addrh'] = substr('0' . dechex($_SESSION['addr']), -2); //地址位2位十六进制
                 $_SESSION['psnh'] = substr('000' . dechex($_SESSION['psn']), -4); //厂家序号4位十六进制
                 $_SESSION['cyclecount'] = $_SESSION['recordindex'] = 0;
                 $_SESSION['connectbegin'] = $_SESSION['cyclebegin'] = $_SESSION['recordbegin'] = $now;
-                $_SESSION['gps'] = array_fill_keys(array('lat', 'lon', 'velocity', 'direction', 'type', 'locationdate'), null);
+                $_SESSION['gps'] += array_fill_keys(array('lat', 'lon', 'velocity', 'direction', 'type', 'locationdate'), null);
                 $_SESSION['record'] = array_fill_keys($datakeys[$entity['sort']], null);
                 $_SESSION += array('recordindex' => 0, 'recordcount' => 0, 'cyclecount' => 0, 'lastrecord' => 0, 'lastcycle' => 0, 'last' => 0);
                 //绑定Uid,group
-                Gateway::bindUid($client_id, $entity['psn']);
-                Gateway::joinGroup($client_id, $entity['sort']);
+                Gateway::bindUid($client_id, $_SESSION['psn']);
+                Gateway::joinGroup($client_id, $_SESSION['sort']);
             } else {
                 //登出
                 session_destroy();
@@ -261,15 +255,15 @@ class Events
                 $fLat = ($adata[4] == 'N' ? 1 : -1) * (int) substr($lat, 0, strlen($lat) - 8) + (float) substr($lat, -8) / 60;
                 $lon = $adata[5];
                 $fLon = ($adata[6] == 'E' ? 1 : -1) * (int) substr($lon, 0, strlen($lon) - 8) + (float) substr($lon, -8) / 60;
-                $type = substr($adata[12], 1);
-                unset($_SESSION['gps']);
+                $type = substr($adata[12], 0, 1);
                 $_SESSION['gps']['lat'] = $fLat; //纬度
                 $_SESSION['gps']['lon'] = $fLon; //经度
-                $_SESSION['gps']['velocity'] = (float) $adata[7] * 1.852 / 3.6; //速度 m/s
-                $_SESSION['gps']['direction'] = $adata[8]; //方向
+                $_SESSION['gps']['velocity'] = ((float) $adata[7]) * 1.852 / 3.6; //速度 m/s
+                $_SESSION['gps']['direction'] = (float)$adata[8]; //方向
                 $_SESSION['gps']['type'] = $type; //定位态别
                 $_SESSION['gps']['cdate'] = (new DateTime())->format('Y-m-d H:i:s'); //定位时间
                 $_SESSION['gpscount'] += 1;
+                Events::saveGps();
             }
         }
         //Dryer 心跳包  $$$
@@ -302,7 +296,6 @@ class Events
                 $_SESSION['cyclecount'] += 1;
             }
         }
-
         //向SV发送位置信息
         if ($_SESSION['sort'] == 1 && $_SESSION['gpscount'] == 1 && $_SESSION['connectbegin'] != '') {
             Events::tcpGps($_SESSION['psn']);
@@ -354,6 +347,27 @@ class Events
             $crc16 = CrcTool::crc16(pack("H*", $hexs));
             $sendAddr = $hexs . unpack("H4s", $crc16)['s'];
             Gateway::sendToCient($_SESSION['clientid'], $sendAddr);
+        }
+    }
+    public static function saveGps()
+    {
+        global $db;
+        if (!array_key_exists('gpscount', $_SESSION) or $_SESSION['gpscount'] == 1){
+            return ;
+        }
+        if (
+            $_SESSION['gpscount'] == 1
+            or  !array_key_exists('sdate', $_SESSION['gps'])
+            or  strtotime($_SESSION['gps']['cdate']) - strtotime($_SESSION['gps']['sdate']) >= 3600
+        ) {
+            $insert_id = 0;
+            $para = $_SESSION['gps'];
+            $para['entity'] = $_SESSION['id'];
+            $insert_id = $db->insert('ym_gps')->cols($para)->query();
+            if ($insert_id > 0) {
+                $_SESSION['lastgps'] = $insert_id;
+                $_SESSION['gps']['sdate'] = $_SESSION['gps']['cdate'];
+            }
         }
     }
     public static function saveRecord()
