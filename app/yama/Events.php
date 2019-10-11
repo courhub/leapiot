@@ -183,7 +183,6 @@ class Events
      */
     public static function onConnect($client_id)
     {
-        session_start();
         $_SESSION['id'] = 0;
         $_SESSION['clientid'] = $client_id;
         $_SESSION['sort'] = 0;
@@ -217,7 +216,10 @@ class Events
         $amsg = unpack("a*", $message);                     //字符數組
         $data = join($amsg);                                //字符串
         $head = substr($data, 0, 3);                        //前三個字母
-        $hexa = unpack("H2a/H2f/H2l/H4d/H4c", $message);    //十六進制字符串數組a-address；f-function;l-length;d-data;c-crc16
+        $hexa = null;
+        if(strlen($data)>5){
+            $hexa = unpack("H2a/H2f/H2l/H4d/H4c", $message);    //十六進制字符串數組a-address；f-function;l-length;d-data;c-crc16
+        }
 
         //Dryer 註冊包  @@@00017162485b30dbe2644067b6ebc5ebe0af 字符串+PSN+PWD
         if ($head == '@@@') {
@@ -235,7 +237,7 @@ class Events
                 $_SESSION['psnh'] = substr('000' . dechex($_SESSION['psn']), -4); //厂家序号4位十六进制
                 $_SESSION['cyclecount'] = $_SESSION['recordindex'] = 0;
                 $_SESSION['connectbegin'] = $_SESSION['cyclebegin'] = $_SESSION['recordbegin'] = $now;
-                $_SESSION['gps'] += array_fill_keys(array('lat', 'lon', 'velocity', 'direction', 'type', 'locationdate'), null);
+                $_SESSION['gps'] = array_fill_keys(array('lat', 'lon', 'velocity', 'direction', 'type', 'cdate', 'sdate'), null);
                 $_SESSION['record'] = array_fill_keys($datakeys[$entity['sort']], null);
                 $_SESSION += array('recordindex' => 0, 'recordcount' => 0, 'cyclecount' => 0, 'lastrecord' => 0, 'lastcycle' => 0, 'last' => 0);
                 //绑定Uid,group
@@ -259,7 +261,7 @@ class Events
                 $_SESSION['gps']['lat'] = $fLat; //纬度
                 $_SESSION['gps']['lon'] = $fLon; //经度
                 $_SESSION['gps']['velocity'] = ((float) $adata[7]) * 1.852 / 3.6; //速度 m/s
-                $_SESSION['gps']['direction'] = (float)$adata[8]; //方向
+                $_SESSION['gps']['direction'] = (float) $adata[8]; //方向
                 $_SESSION['gps']['type'] = $type; //定位态别
                 $_SESSION['gps']['cdate'] = (new DateTime())->format('Y-m-d H:i:s'); //定位时间
                 $_SESSION['gpscount'] += 1;
@@ -345,27 +347,33 @@ class Events
         ) {
             $hexs = $_SESSION['addrh'] . '03' . $dataaddr[$_SESSION['sort']][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] . '0001';
             $crc16 = CrcTool::crc16(pack("H*", $hexs));
-            $sendAddr = $hexs . unpack("H4s", $crc16)['s'];
-            Gateway::sendToCient($_SESSION['clientid'], $sendAddr);
+            $data = pack('H*',$hexs . unpack("H4s", $crc16)['s']);
+            Gateway::sendToCient($_SESSION['clientid'], $data);
         }
     }
     public static function saveGps()
     {
         global $db;
-        if (!array_key_exists('gpscount', $_SESSION) or $_SESSION['gpscount'] == 1){
-            return ;
+        if (!array_key_exists('gpscount', $_SESSION) or $_SESSION['gpscount'] == 0 or $_SESSION['id'] == 0) {
+            return;
         }
         if (
-            $_SESSION['gpscount'] == 1
-            or  !array_key_exists('sdate', $_SESSION['gps'])
+            $_SESSION['gps']['sdate'] == null
             or  strtotime($_SESSION['gps']['cdate']) - strtotime($_SESSION['gps']['sdate']) >= 3600
         ) {
             $insert_id = 0;
-            $para = $_SESSION['gps'];
-            $para['entity'] = $_SESSION['id'];
+            $para = array(
+                'entity' => $_SESSION['id'],
+                'lon' => $_SESSION['gps']['lon'],
+                'lat' => $_SESSION['gps']['lat'],
+                'velocity' => $_SESSION['gps']['velocity'],
+                'direction' => $_SESSION['gps']['direction'],
+                'type' => $_SESSION['gps']['type'],
+                'cdate' => $_SESSION['gps']['cdate']
+            );
             $insert_id = $db->insert('ym_gps')->cols($para)->query();
             if ($insert_id > 0) {
-                $_SESSION['lastgps'] = $insert_id;
+                $_SESSION['lastgps'] = (int) $insert_id;
                 $_SESSION['gps']['sdate'] = $_SESSION['gps']['cdate'];
             }
         }
