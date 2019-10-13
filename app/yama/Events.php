@@ -223,13 +223,15 @@ class Events
 
         //Dryer 註冊包  @@@00017162485b30dbe2644067b6ebc5ebe0af 字符串+PSN+PWD
         if ($head == '@@@') {
-            $psn = hexdec(substr($data, 3, 4));
-            $pwd = substr($data, 7);
+            $psn = hexdec(substr($data, -4));
+            $pwd = substr($data, 3, strlen($data) - 7);
             $entity = $db->select("id,psn,sort,addr,cast(spec->'$.model' as signed) AS model,cast(spec->'$.tonnage' as signed) AS tonnage")
                 ->from('ym_entity')
                 ->where("flag=:flag and pwd=:pwd and psn=:psn")
                 ->bindValues(array('flag' => 1, 'psn' => $psn, 'pwd' => $pwd))
                 ->row();
+            var_dump($entity);
+            return;
             if ($entity) {
                 //登入，初始化session參數
                 $_SESSION = $entity + $_SESSION;

@@ -81,7 +81,7 @@ use \Workerman\Worker;
 //$message = pack("H*",$message);
 //$amsg = unpack("a*", $message);
 $amsgs = array(
-    'ini'     => pack('a*', '@@@00017162485b30dbe2644067b6ebc5ebe0af'),
+    'ini'     => pack('a*', '@@@7162485b30dbe2644067b6ebc5ebe0af0001'),
     'heart'   => pack('a*', '$$$'),
     'gps'     => pack('a*', '$GPRMC,225530.000,A,3637.26040,N,11700.56340,E,10.000,97.17,220512,,,D*57'),
     'addr'    => pack('H*', '0103000C00014409'),
@@ -95,8 +95,8 @@ $amsgs = array(
     'checkt'  => pack('H*', '5aa500030001000400003600000000'),
     'checkr'  => pack('H*', '5aa50003000100040100360000001e00010001000000000000000000000000000007E3000a000a0009000f0014')
 );
-var_dump(strlen($amsgs['addr']));
-$message = $amsgs['gps'];
+var_dump(strlen($amsgs['ini']));
+$message = $amsgs['ini'];
 $client_id = 'FFFF0001CCCC0001';
 Events::onWorkerStart(null);
 Events::onMessage($client_id,$message);
