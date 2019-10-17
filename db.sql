@@ -1,16 +1,16 @@
-﻿-- phpMyAdmin SQL Dump
--- version 4.8.5
+-- phpMyAdmin SQL Dump
+-- version 4.7.4
 -- https://www.phpmyadmin.net/
 --
--- 主機： 127.0.0.1:3306
--- 產生時間： 2019 年 10 月 10 日 12:07
--- 伺服器版本： 5.7.26
--- PHP 版本： 7.2.18
+-- Host: 127.0.0.1:3306
+-- Generation Time: 2019-10-18 01:32:48
+-- 服务器版本： 5.7.19
+-- PHP Version: 5.6.31
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 SET AUTOCOMMIT = 0;
 START TRANSACTION;
-SET time_zone = "+08:00";
+SET time_zone = "+00:00";
 
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -19,13 +19,13 @@ SET time_zone = "+08:00";
 /*!40101 SET NAMES utf8mb4 */;
 
 --
--- 資料庫： `yamamoto`
+-- Database: `yamamoto`
 --
 
 -- --------------------------------------------------------
 
 --
--- 資料表結構 `ym_alerm`
+-- 表的结构 `ym_alerm`
 --
 
 DROP TABLE IF EXISTS `ym_alerm`;
@@ -34,10 +34,10 @@ CREATE TABLE IF NOT EXISTS `ym_alerm` (
   `entity` int(10) UNSIGNED NOT NULL,
   `adate` datetime NOT NULL,
   `cdate` datetime NOT NULL,
-  `errorcode` int(10) UNSIGNED NOT NULL,
+  `alermcode` int(10) UNSIGNED NOT NULL,
   `operating` tinyint(4) NOT NULL,
   `para` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  `program` varchar(20) NOT NULL,
+  `program` varchar(20) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `entity` (`entity`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS `ym_alerm` (
 -- --------------------------------------------------------
 
 --
--- 資料表結構 `ym_cycle`
+-- 表的结构 `ym_cycle`
 --
 
 DROP TABLE IF EXISTS `ym_cycle`;
@@ -68,14 +68,14 @@ CREATE TABLE IF NOT EXISTS `ym_cycle` (
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8 COMMENT='设备使用CYCLE记录';
 
 --
--- 傾印資料表的資料 `ym_cycle`
+-- 转存表中的数据 `ym_cycle`
 --
 
 INSERT INTO `ym_cycle` (`id`, `entity`, `bdate`, `edate`, `stage`, `type`, `amt`, `unit`, `kind`, `brecord`, `erecord`, `cdate`, `flag`) VALUES
 (1, 1, '2019-09-17 00:00:00', '2019-09-17 10:00:00', 1, 0, '12', 'T', 1, 2, 2, '2019-09-17 11:08:33', b'1');
 
 --
--- 觸發器 `ym_cycle`
+-- 触发器 `ym_cycle`
 --
 DROP TRIGGER IF EXISTS `trigger_ym_cycle_after_insert`;
 DELIMITER $$
@@ -86,7 +86,7 @@ DELIMITER ;
 -- --------------------------------------------------------
 
 --
--- 資料表結構 `ym_entity`
+-- 表的结构 `ym_entity`
 --
 
 DROP TABLE IF EXISTS `ym_entity`;
@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS `ym_entity` (
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8 COMMENT='设备实体主表';
 
 --
--- 傾印資料表的資料 `ym_entity`
+-- 转存表中的数据 `ym_entity`
 --
 
 INSERT INTO `ym_entity` (`id`, `sort`, `model`, `org`, `status`, `csn`, `psn`, `pwd`, `addr`, `spec`, `lastgps`, `lastrecord`, `lastcycle`, `cdate`, `cuser`, `udate`, `uuser`, `flag`) VALUES
@@ -124,7 +124,7 @@ INSERT INTO `ym_entity` (`id`, `sort`, `model`, `org`, `status`, `csn`, `psn`, `
 -- --------------------------------------------------------
 
 --
--- 資料表結構 `ym_gps`
+-- 表的结构 `ym_gps`
 --
 
 DROP TABLE IF EXISTS `ym_gps`;
@@ -142,7 +142,7 @@ CREATE TABLE IF NOT EXISTS `ym_gps` (
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8;
 
 --
--- 傾印資料表的資料 `ym_gps`
+-- 转存表中的数据 `ym_gps`
 --
 
 INSERT INTO `ym_gps` (`id`, `entity`, `lon`, `lat`, `velocity`, `direction`, `cdate`, `type`) VALUES
@@ -150,7 +150,7 @@ INSERT INTO `ym_gps` (`id`, `entity`, `lon`, `lat`, `velocity`, `direction`, `cd
 (2, 1, 117.009, 36.621, 5.14444, 97.17, '2019-10-10 20:02:48', 'D');
 
 --
--- 觸發器 `ym_gps`
+-- 触发器 `ym_gps`
 --
 DROP TRIGGER IF EXISTS `trigger_ym_gps_after_insert`;
 DELIMITER $$
@@ -161,7 +161,7 @@ DELIMITER ;
 -- --------------------------------------------------------
 
 --
--- 資料表結構 `ym_org`
+-- 表的结构 `ym_org`
 --
 
 DROP TABLE IF EXISTS `ym_org`;
@@ -179,7 +179,7 @@ CREATE TABLE IF NOT EXISTS `ym_org` (
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8;
 
 --
--- 傾印資料表的資料 `ym_org`
+-- 转存表中的数据 `ym_org`
 --
 
 INSERT INTO `ym_org` (`id`, `name`, `pid`, `sort`, `cdate`, `cuser`, `udate`, `uuser`, `flag`) VALUES
@@ -189,7 +189,7 @@ INSERT INTO `ym_org` (`id`, `name`, `pid`, `sort`, `cdate`, `cuser`, `udate`, `u
 -- --------------------------------------------------------
 
 --
--- 資料表結構 `ym_para`
+-- 表的结构 `ym_para`
 --
 
 DROP TABLE IF EXISTS `ym_para`;
@@ -209,7 +209,7 @@ CREATE TABLE IF NOT EXISTS `ym_para` (
 ) ENGINE=InnoDB AUTO_INCREMENT=58 DEFAULT CHARSET=utf8;
 
 --
--- 傾印資料表的資料 `ym_para`
+-- 转存表中的数据 `ym_para`
 --
 
 INSERT INTO `ym_para` (`id`, `sort`, `code`, `name`, `note`, `cdate`, `cuser`, `udate`, `uuser`, `flag`) VALUES
@@ -274,7 +274,7 @@ INSERT INTO `ym_para` (`id`, `sort`, `code`, `name`, `note`, `cdate`, `cuser`, `
 -- --------------------------------------------------------
 
 --
--- 資料表結構 `ym_record`
+-- 表的结构 `ym_record`
 --
 
 DROP TABLE IF EXISTS `ym_record`;
@@ -290,14 +290,14 @@ CREATE TABLE IF NOT EXISTS `ym_record` (
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8;
 
 --
--- 傾印資料表的資料 `ym_record`
+-- 转存表中的数据 `ym_record`
 --
 
 INSERT INTO `ym_record` (`id`, `entity`, `fdate`, `tdate`, `operating`, `para`) VALUES
 (2, 1, '2019-09-17 00:00:00', '2019-09-17 10:00:00', 1, '{\"operating\":1}');
 
 --
--- 觸發器 `ym_record`
+-- 触发器 `ym_record`
 --
 DROP TRIGGER IF EXISTS `trigger_ym_record_after_insert`;
 DELIMITER $$
@@ -308,7 +308,7 @@ DELIMITER ;
 -- --------------------------------------------------------
 
 --
--- 資料表結構 `ym_user`
+-- 表的结构 `ym_user`
 --
 
 DROP TABLE IF EXISTS `ym_user`;
@@ -332,7 +332,7 @@ CREATE TABLE IF NOT EXISTS `ym_user` (
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8;
 
 --
--- 傾印資料表的資料 `ym_user`
+-- 转存表中的数据 `ym_user`
 --
 
 INSERT INTO `ym_user` (`id`, `name`, `pwd`, `realname`, `mail`, `mobile`, `level`, `org`, `cdate`, `cuser`, `udate`, `uuser`, `status`, `flag`) VALUES

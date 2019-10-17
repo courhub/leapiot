@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '\..\..\config.php';
+require_once __DIR__ . '/../../config.php';
 
 /**
  * This file is part of workerman.
@@ -29,6 +29,11 @@ use \GatewayWorker\Lib\Gateway;
 use \Workerman\Worker;
 use \Workerman\Connection\TcpConnection;
 use \Workerman\Connection\AsyncTcpConnection;
+/**
+ * 将配置文件的配置信息复制到global变量$conf中
+ */
+global $conf;
+$conf = $config;
 
 /**
  * 接收設備的心跳和定位信息並查詢其他信息
@@ -42,6 +47,7 @@ $sv = null; //conntoserver
 $svpipe = array(); //向Tcp平台發送信息的緩存數據 key=>msg key為隨機順序號
 $svsn = 0; //Tcp數據包的隨機序號 int，最大65535，循環使用。
 
+global $dataaddr, $datakeys;
 $dataaddr = array(1 => array(
     'operating'         => '0000',
     'abnormal'          => '0001',
@@ -71,7 +77,7 @@ $datakeys = array(1 => array_keys($dataaddr[1]));
 /**
  * 主逻辑
  * 主要是处理 onConnect onMessage onClose 三个方法
- * onConnect 和 onClose 如果不需要可以不用实现并删除
+ * onConnect 和 onClose 如果不需要可以不用实现
  */
 class Events
 {
@@ -91,19 +97,19 @@ class Events
      */
     public static function connDatabase()
     {
-        global $config;
+        global $conf;
         global $db;
-        $db = new \Workerman\MySQL\Connection($config['db']['host'], $config['db']['port'], $config['db']['user'], $config['db']['pwd'], $config['db']['name']);
+        $db = new \Workerman\MySQL\Connection($conf['db']['host'], $conf['db']['port'], $conf['db']['user'], $conf['db']['pwd'], $conf['db']['name']);
     }
     /**
      * 鏈接TcpServer(外部數據接收平台)
      */
     public static function connServer()
     {
-        global $config;
+        global $conf;
         global $sv;
         //異步链接远端TCP服务器
-        $sv = new AsyncTcpConnection($config['tcp']['host']);
+        $sv = new AsyncTcpConnection($conf['tcp']['host']);
         $sv->onConnect = function ($sv) {
             $timer_interval = 10;
             //每隔10秒向TCP服務器發送緩存的數據（FIFO),如果接收到發送成功的回復則承從緩存的數組中刪除此數據。
@@ -122,9 +128,9 @@ class Events
          */
         $sv->onMessage = function ($sv, $msg) {
             global $svpipe;
-            global $config;
+            global $conf;
             $svh  = unpack("H4head/H4factory/H4psn/H4sort/H2io/H4sn/H8len/H4result/H*datatime", $msg);    //十六進制字符串數組a-address；f-function;l-length;d-data;c-crc16
-            if ($svh['head'] != '5aa5' || hexdec($svh['factory']) != $config['tcp']['fsn']) {
+            if ($svh['head'] != '5aa5' || hexdec($svh['factory']) != $conf['tcp']['fsn']) {
                 //非法信息，不予處理
             } else if ($svh['io'] == '01' && $svh['result'] == '0000') {
                 //應答信息，正確結果；刪除傳輸緩存中的信息
@@ -142,6 +148,7 @@ class Events
         $sv->onClose = function ($sv) {
             $sv->reConnect(1);
         };
+        $sv->connect();
     }
     /**
      * 產生Tcp信息隨機序列號，每次+1，超過65535時從1開始。
@@ -158,9 +165,9 @@ class Events
     public static function addSvPipe($sn, $data)
     {
         global $svpipe;
-        global $config;
-        if (count($svpipe) > $config['tcp']['pipelen']) {
-            $svpipe = array_slice($svpipe, count($svpipe) - $config['tcp']['pipelen'], $config['tcp']['pipelen'], true);
+        global $conf;
+        if (count($svpipe) > $conf['tcp']['pipelen']) {
+            $svpipe = array_slice($svpipe, count($svpipe) - $conf['tcp']['pipelen'], $conf['tcp']['pipelen'], true);
         }
         $svpipe[$sn] = $data;
         return $svpipe;
@@ -190,11 +197,13 @@ class Events
         $_SESSION['connectend'] = '';
         $_SESSION['heartcount'] = 0;
         $_SESSION['gpscount'] = 0;
+        $_SESSION['cyclecount'] = 0;
+        $_SESSION['alermcount'] = 0;
 
         $_SESSION['recordindex'] = 0;
-        $_SESSION['cyclecount'] = 0;
         $_SESSION['lastrecord'] = 0;
         $_SESSION['lastcycle'] = 0;
+        $_SESSION['lastalerm'] = 0;
     }
 
     /**
@@ -210,18 +219,19 @@ class Events
             Events::onConnect($client_id);
         }
         $now = (new DateTime())->format('Y-m-d H:i:s');
-        // 向所有人发送
-        //Gateway::sendToAll("$client_id said $message\r\n");
         //解包数据
         $amsg = unpack("a*", $message);                     //字符數組
         $data = join($amsg);                                //字符串
         $head = substr($data, 0, 3);                        //前三個字母
         $hexa = null;
+
+        echo $now." entity >>>>>> server";
+        var_dump($data);
         if(strlen($data)>5){
             $hexa = unpack("H2a/H2f/H2l/H4d/H4c", $message);    //十六進制字符串數組a-address；f-function;l-length;d-data;c-crc16
         }
 
-        //Dryer 註冊包  @@@00017162485b30dbe2644067b6ebc5ebe0af 字符串+PSN+PWD
+        //Dryer 註冊包  @@@7162485b30dbe2644067b6ebc5ebe0af0001 字符串+PWD+PSN
         if ($head == '@@@') {
             $psn = hexdec(substr($data, -4));
             $pwd = substr($data, 3, strlen($data) - 7);
@@ -231,7 +241,6 @@ class Events
                 ->bindValues(array('flag' => 1, 'psn' => $psn, 'pwd' => $pwd))
                 ->row();
             var_dump($entity);
-            return;
             if ($entity) {
                 //登入，初始化session參數
                 $_SESSION = $entity + $_SESSION;
@@ -279,7 +288,8 @@ class Events
                 $_SESSION['recordindex'] = 0;
             }
             //发送第一笔数据请求
-            Events::sendRecordAddr($client_id);
+            Events::sendRecordAddr();
+            //Gateway::sendToClient($client_id,pack('H*','010300000001840a'));
         }
         //Dryer 数据    
         elseif ($hexa['a'] . $hexa['f'] . $hexa['l'] == $_SESSION['addrh'] . '0302') {
@@ -288,17 +298,19 @@ class Events
                 $_SESSION['record'][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] = unpack("s1int", pack("H*", $hexa['d']))['int'];
                 $_SESSION['cyclecount'] += 1;
             }
-            Events::sendRecordAddr($client_id);
-            Events::saveRecord($client_id);
-            Events::saveCycle($client_id);
+            Events::sendRecordAddr();
+            Events::saveRecord();
+            Events::saveCycle();
         }
-        //Dryer ERROR CODE
+        //Dryer ALERM CODE
         elseif ($hexa['a'] . $hexa['f'] . $hexa['l'] == $_SESSION['addrh'] . '8301') {
             $crc16 = CrcTool::crc16(pack("H*", $hexa['a'] . $hexa['f'] . $hexa['l']));
             if (unpack("H4s", $crc16)['s'] == $hexa['d']) {
-                $_SESSION['errorcode'] = unpack("s1int", pack("H*", $hexa['l']))['int'];
-                $_SESSION['cyclecount'] += 1;
+                $_SESSION['alermcode'] = unpack("s1int", pack("H*", $hexa['l']))['int'];
+                $_SESSION['alermcount'] += 1;
             }
+            Events::sendRecordAddr();
+            Events::saveAlerm();
         }
         //向SV发送位置信息
         if ($_SESSION['sort'] == 1 && $_SESSION['gpscount'] == 1 && $_SESSION['connectbegin'] != '') {
@@ -337,7 +349,7 @@ class Events
     }
 
     //发送数据地址
-    public static function sendRecordAddr($client_id)
+    public static function sendRecordAddr()
     {
         global $dataaddr;
         global $datakeys;
@@ -350,8 +362,11 @@ class Events
             $hexs = $_SESSION['addrh'] . '03' . $dataaddr[$_SESSION['sort']][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] . '0001';
             $crc16 = CrcTool::crc16(pack("H*", $hexs));
             $data = pack('H*',$hexs . unpack("H4s", $crc16)['s']);
-            Gateway::sendToCient($_SESSION['clientid'], $data);
+            Gateway::sendToClient($_SESSION['clientid'], $data);
+            echo '\n'.'-------------------  entity <<<<<< server '.$_SESSION['clientid'];
+            var_dump($data);
         }
+        echo ''.'---- E R R O R ---- entity <<<<<< server';
     }
     public static function saveGps()
     {
@@ -423,6 +438,26 @@ class Events
                 $_SESSION['lastcycle'] = $insert_id;
             }
             Events::tcpCycle($insert_id);
+        }
+    }
+    public static function saveAlerm()
+    {
+        global $db;
+        $insert_id = 0;
+        $dt = (new DateTime())->format('Y-m-d H:i:s');
+        if ($_SESSION['alermcount'] > 0) {
+            $insert_id = 0;
+            $para = json_encode(Events::dbRecordFmt($_SESSION['record']));
+
+            $insert_id = $db->insert('ym_alerm')->cols(array(
+                'entity' => $_SESSION['id'], 'adate' => $dt, 'cdate' => $dt,
+                'operating' => $_SESSION['record']['operatingtype'],
+                'para' => $_SESSION['record']['grain'], 'alermcode' => $_SESSION['alerm'],
+                'program' => ''
+            ))->query();
+            if ($insert_id) {
+                $_SESSION['lastalerm'] = $insert_id;
+            }
         }
     }
 
