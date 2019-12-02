@@ -77,7 +77,7 @@ $datakeys = array(1 => array_keys($dataaddr[1]));
 /**
  * 主逻辑
  * 主要是处理 onConnect onMessage onClose 三个方法
- * onConnect 和 onClose 如果不需要可以不用实现
+ * onConnect 和 onClose 如果不需要可以不用实现并删除
  */
 class Events
 {
@@ -192,18 +192,17 @@ class Events
     {
         $_SESSION['id'] = 0;
         $_SESSION['clientid'] = $client_id;
+        $_SESSION['psn'] = 0;
         $_SESSION['sort'] = 0;
         $_SESSION['connectbegin'] = '';
         $_SESSION['connectend'] = '';
         $_SESSION['heartcount'] = 0;
         $_SESSION['gpscount'] = 0;
-        $_SESSION['cyclecount'] = 0;
-        $_SESSION['alermcount'] = 0;
 
         $_SESSION['recordindex'] = 0;
+        $_SESSION['cyclecount'] = 0;
         $_SESSION['lastrecord'] = 0;
         $_SESSION['lastcycle'] = 0;
-        $_SESSION['lastalerm'] = 0;
     }
 
     /**
@@ -224,23 +223,24 @@ class Events
         $data = join($amsg);                                //字符串
         $head = substr($data, 0, 3);                        //前三個字母
         $hexa = null;
-
-        echo $now." entity >>>>>> server";
         var_dump($data);
+        echo $now." ONMESSAGE[".$data."] @".$client_id.'--'.$_SESSION['psn'];
+        
         if(strlen($data)>5){
             $hexa = unpack("H2a/H2f/H2l/H4d/H4c", $message);    //十六進制字符串數組a-address；f-function;l-length;d-data;c-crc16
         }
-
-        //Dryer 註冊包  @@@7162485b30dbe2644067b6ebc5ebe0af0001 字符串+PWD+PSN
+        //var_dump($hexa);
+        //var_dump($_SESSION['addrh']);
+        //Dryer 註冊包  @@@7162485b30dbe2644067b6ebc5ebe0af001 字符串+PWD+PSN
         if ($head == '@@@') {
             $psn = hexdec(substr($data, -4));
-            $pwd = substr($data, 3, strlen($data) - 7);
-            $entity = $db->select("id,psn,sort,addr,cast(spec->'$.model' as signed) AS model,cast(spec->'$.tonnage' as signed) AS tonnage")
+            $pwd = substr($data, 3,strlen($data) - 7);
+            $entity = $db->select("id,psn,sort,addr,lastgps,cast(spec->'$.model' as signed) AS model,cast(spec->'$.tonnage' as signed) AS tonnage")
                 ->from('ym_entity')
                 ->where("flag=:flag and pwd=:pwd and psn=:psn")
                 ->bindValues(array('flag' => 1, 'psn' => $psn, 'pwd' => $pwd))
                 ->row();
-            var_dump($entity);
+            //var_dump($entity);
             if ($entity) {
                 //登入，初始化session參數
                 $_SESSION = $entity + $_SESSION;
@@ -251,13 +251,25 @@ class Events
                 $_SESSION['gps'] = array_fill_keys(array('lat', 'lon', 'velocity', 'direction', 'type', 'cdate', 'sdate'), null);
                 $_SESSION['record'] = array_fill_keys($datakeys[$entity['sort']], null);
                 $_SESSION += array('recordindex' => 0, 'recordcount' => 0, 'cyclecount' => 0, 'lastrecord' => 0, 'lastcycle' => 0, 'last' => 0);
+                if($entity['lastgps']>0){
+                    $gps = $db->select("lat,lon,velocity,direction,type,cdate,cdate as sdate")
+                        ->from('ym_gps')
+                        ->where("id=:id")
+                        ->bindValues(array('id'=>$entity['lastgps']))
+                        ->row();
+                    if($gps){
+                        $_SESSION['gps']=$gps;
+                    }
+                }
                 //绑定Uid,group
                 Gateway::bindUid($client_id, $_SESSION['psn']);
                 Gateway::joinGroup($client_id, $_SESSION['sort']);
+                echo "		LOGIN OK";
             } else {
                 //登出
-                session_destroy();
+                //session_destroy();
                 Gateway::destoryCurrentClient();
+                echo "		LOGIN NG";
             }
         }
         //Dryer GPS包
@@ -265,9 +277,9 @@ class Events
             $adata = explode(',', $data);
             if ($adata[0] == '$GPRMC' && count($adata) >= 12 && $adata[2] == 'A') {
                 $lat = $adata[3];
-                $fLat = ($adata[4] == 'N' ? 1 : -1) * (int) substr($lat, 0, strlen($lat) - 8) + (float) substr($lat, -8) / 60;
+                $fLat = ($adata[4] == 'N' ? 1 : -1) * (int) substr($lat, 0, strlen($lat) - 7) + (float) substr($lat, -7) / 60;
                 $lon = $adata[5];
-                $fLon = ($adata[6] == 'E' ? 1 : -1) * (int) substr($lon, 0, strlen($lon) - 8) + (float) substr($lon, -8) / 60;
+                $fLon = ($adata[6] == 'E' ? 1 : -1) * (int) substr($lon, 0, strlen($lon) - 7) + (float) substr($lon, -7) / 60;
                 $type = substr($adata[12], 0, 1);
                 $_SESSION['gps']['lat'] = $fLat; //纬度
                 $_SESSION['gps']['lon'] = $fLon; //经度
@@ -277,6 +289,9 @@ class Events
                 $_SESSION['gps']['cdate'] = (new DateTime())->format('Y-m-d H:i:s'); //定位时间
                 $_SESSION['gpscount'] += 1;
                 Events::saveGps();
+		//echo "		GPS OK ".$_SESSION['gps']['lat'].','.$_SESSION['gps']['lon'].' count:'.$_SESSION['gpscount'];
+            }else{
+                //echo "		GPS NG";
             }
         }
         //Dryer 心跳包  $$$
@@ -286,40 +301,53 @@ class Events
                 $_SESSION['cyclebegin'] = $_SESSION['recordbegin'] = $now;
                 $_SESSION['cyclecount'] += 1;
                 $_SESSION['recordindex'] = 0;
-            }
+            	echo "		$$$ CYCLECOUNT+1 = ".$_SESSION['cyclecount'];
+	    }
             //发送第一笔数据请求
-            Events::sendRecordAddr();
+            Events::sendRecordAddr($client_id);
             //Gateway::sendToClient($client_id,pack('H*','010300000001840a'));
         }
         //Dryer 数据    
         elseif ($hexa['a'] . $hexa['f'] . $hexa['l'] == $_SESSION['addrh'] . '0302') {
+            $keyscount = count($datakeys[$_SESSION['sort']]);
+            var_dump($hexa);
+            var_dump($_SESSION['addrh']);
             $crc16 = CrcTool::crc16(pack("H*", $hexa['a'] . $hexa['f'] . $hexa['l'] . $hexa['d']));
-            if (unpack("H4s", $crc16)['s'] == $hexa['c']) {
-                $_SESSION['record'][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] = unpack("s1int", pack("H*", $hexa['d']))['int'];
-                $_SESSION['cyclecount'] += 1;
+            var_dump(unpack("H4s", $crc16));
+            if (unpack("H4s", $crc16)['s'] != $hexa['c']) {
+                echo "            CRC NG";
+            }else if($_SESSION['recordindex'] < $keyscount){
+                $_SESSION['record'][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] = hexdec($hexa['d']);
+                echo "            CRC OK";
+                $_SESSION['recordindex'] += 1;
+                Events::sendRecordAddr($client_id);
+            }else if($_SESSION['recordindex'] == $keyscount){
+                Events::saveRecord($client_id);
+                Events::saveCycle($client_id);
+                $_SESSION['recordindex'] += 1;
+            }else{
             }
-            Events::sendRecordAddr();
-            Events::saveRecord();
-            Events::saveCycle();
         }
-        //Dryer ALERM CODE
+        //Dryer ERROR CODE
         elseif ($hexa['a'] . $hexa['f'] . $hexa['l'] == $_SESSION['addrh'] . '8301') {
             $crc16 = CrcTool::crc16(pack("H*", $hexa['a'] . $hexa['f'] . $hexa['l']));
             if (unpack("H4s", $crc16)['s'] == $hexa['d']) {
-                $_SESSION['alermcode'] = unpack("s1int", pack("H*", $hexa['l']))['int'];
-                $_SESSION['alermcount'] += 1;
+                $_SESSION['errorcode'] = unpack("s1int", pack("H*", $hexa['l']))['int'];
+                $_SESSION['cyclecount'] += 1;
             }
-            Events::sendRecordAddr();
-            Events::saveAlerm();
+            echo $now." ERROR CODE  @".$client_id.$_SESSION['psn'];
         }
         //向SV发送位置信息
-        if ($_SESSION['sort'] == 1 && $_SESSION['gpscount'] == 1 && $_SESSION['connectbegin'] != '') {
+        if ($_SESSION['sort'] == 1 && ($_SESSION['gpscount'] == 1 || $_SESSION['recordcount'] == 1) && $_SESSION['connectbegin'] != '') {
             Events::tcpGps($_SESSION['psn']);
+            echo $now."  TCP GPS    FROM ".$_SESSION['psn'];
         }
         //向SV发送状态信息
         if ($_SESSION['sort'] == 1 && $_SESSION['recordcount']) {
             Events::tcpRecord($_SESSION['psn'], 0);
+            echo $now."  TCP RECORD FROM ".$_SESSION['psn'];
         }
+        print_r($_SESSION['record']);
     }
 
     /**
@@ -349,7 +377,7 @@ class Events
     }
 
     //发送数据地址
-    public static function sendRecordAddr()
+    public static function sendRecordAddr($client_id)
     {
         global $dataaddr;
         global $datakeys;
@@ -362,11 +390,12 @@ class Events
             $hexs = $_SESSION['addrh'] . '03' . $dataaddr[$_SESSION['sort']][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] . '0001';
             $crc16 = CrcTool::crc16(pack("H*", $hexs));
             $data = pack('H*',$hexs . unpack("H4s", $crc16)['s']);
-            Gateway::sendToClient($_SESSION['clientid'], $data);
-            echo '\n'.'-------------------  entity <<<<<< server '.$_SESSION['clientid'];
-            var_dump($data);
+            Gateway::sendToClient($client_id, $data);
+            //Gateway::sendToClient($client_id,pack("H*",'010300000001840a'));
+            echo '		SEND ADDR OK ['.$_SESSION['cyclecount'].':'.$_SESSION['recordindex'].']';
+        }else{
+            echo '		SEND ADDR NG ['.$_SESSION['cyclecount'].';'.$_SESSION['recordindex'].']';
         }
-        echo ''.'---- E R R O R ---- entity <<<<<< server';
     }
     public static function saveGps()
     {
@@ -376,7 +405,7 @@ class Events
         }
         if (
             $_SESSION['gps']['sdate'] == null
-            or  strtotime($_SESSION['gps']['cdate']) - strtotime($_SESSION['gps']['sdate']) >= 3600
+            or  strtotime($_SESSION['gps']['cdate']) - strtotime($_SESSION['gps']['sdate']) >= 3000
         ) {
             $insert_id = 0;
             $para = array(
@@ -440,26 +469,6 @@ class Events
             Events::tcpCycle($insert_id);
         }
     }
-    public static function saveAlerm()
-    {
-        global $db;
-        $insert_id = 0;
-        $dt = (new DateTime())->format('Y-m-d H:i:s');
-        if ($_SESSION['alermcount'] > 0) {
-            $insert_id = 0;
-            $para = json_encode(Events::dbRecordFmt($_SESSION['record']));
-
-            $insert_id = $db->insert('ym_alerm')->cols(array(
-                'entity' => $_SESSION['id'], 'adate' => $dt, 'cdate' => $dt,
-                'operating' => $_SESSION['record']['operatingtype'],
-                'para' => $_SESSION['record']['grain'], 'alermcode' => $_SESSION['alerm'],
-                'program' => ''
-            ))->query();
-            if ($insert_id) {
-                $_SESSION['lastalerm'] = $insert_id;
-            }
-        }
-    }
 
     public static function dbRecordFmt($data)
     {
@@ -482,7 +491,8 @@ class Events
         global $sv;
         $data = array('model' => '0000', 'tonnage' => '0000', 'lond' => '00', 'lonf' => '00', 'lonm' => '00', 'latd' => '00', 'latf' => '00', 'latm' => '00');
         if (Gateway::isUidOnline($psn)) {
-            $session = Gateway::getSession(Gateway::getClientIdByUid($psn));
+            var_dump(GateWay::getClientIdByUid($psn)[0]);
+            $session = Gateway::getSession(Gateway::getClientIdByUid($psn)[0]);
         } else {
             $session = array();
         }
@@ -581,6 +591,7 @@ class Events
             Events::addSvPipe($sn, $msg);
         }
         $sv->send($msg);
+        echo 'TCP GPS '.join('',unpack('H*',$msg));
     }
     public static function tcpCycle($cid)
     {
