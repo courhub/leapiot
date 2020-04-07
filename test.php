@@ -81,7 +81,7 @@ use \Workerman\Worker;
 //$message = pack("H*",$message);
 //$amsg = unpack("a*", $message);
 $amsgs = array(
-    'ini'     => pack('a*', '@@@00017162485b30dbe2644067b6ebc5ebe0af'),
+    'ini'     => pack('a*', '@@@7162485b30dbe2644067b6ebc5ebe0af0001'),
     'heart'   => pack('a*', '$$$'),
     'gps'     => pack('a*', '$GPRMC,225530.000,A,3637.26040,N,11700.56340,E,10.000,97.17,220512,,,D*57'),
     'addr'    => pack('H*', '0103000C00014409'),

@@ -38,7 +38,10 @@ $gateway->registerAddress = '127.0.0.1:1238';
 //$gateway->pingInterval = 10;
 // 心跳数据
 //$gateway->pingData = '{"type":"ping"}';
-
+//設置發送二進制數據給客戶端
+$gateway->onConnect = function($connection) {
+    $connection->websocketType = Workerman\Protocols\Websocket::BINARY_TYPE_ARRAYBUFFER;
+};
 /* 
 // 当客户端连接上来时，设置连接的onWebSocketConnect，即在websocket握手时的回调
 $gateway->onConnect = function($connection)

@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '\..\..\config.php';
+require_once __DIR__ . '/../../config.php';
 
 /**
  * This file is part of workerman.
@@ -29,6 +29,12 @@ use \GatewayWorker\Lib\Gateway;
 use \Workerman\Worker;
 use \Workerman\Connection\TcpConnection;
 use \Workerman\Connection\AsyncTcpConnection;
+use \Workerman\Lib\Timer;
+/**
+ * 将配置文件的配置信息复制到global变量$conf中
+ */
+global $conf;
+$conf = $config;
 
 /**
  * 接收設備的心跳和定位信息並查詢其他信息
@@ -42,6 +48,7 @@ $sv = null; //conntoserver
 $svpipe = array(); //向Tcp平台發送信息的緩存數據 key=>msg key為隨機順序號
 $svsn = 0; //Tcp數據包的隨機序號 int，最大65535，循環使用。
 
+global $dataaddr, $datakeys;
 $dataaddr = array(1 => array(
     'operating'         => '0000',
     'abnormal'          => '0001',
@@ -83,6 +90,7 @@ class Events
      */
     public static function onWorkerStart($businessWorker)
     {
+        echo __LINE__." : Worker start.\n";
         Events::connDatabase();
         Events::connServer();
     }
@@ -91,27 +99,30 @@ class Events
      */
     public static function connDatabase()
     {
-        global $config;
+        global $conf;
         global $db;
-        $db = new \Workerman\MySQL\Connection($config['db']['host'], $config['db']['port'], $config['db']['user'], $config['db']['pwd'], $config['db']['name']);
+        echo __LINE__." : Conn Database.\n";
+	    $db = new \Workerman\MySQL\Connection($conf['db']['host'], $conf['db']['port'], $conf['db']['user'], $conf['db']['pwd'], $conf['db']['name']);
     }
     /**
      * 鏈接TcpServer(外部數據接收平台)
      */
     public static function connServer()
     {
-        global $config;
+        global $conf;
         global $sv;
+	    echo __LINE__." : Conn Tcp server. \n";
         //異步链接远端TCP服务器
-        $sv = new AsyncTcpConnection($config['tcp']['host']);
+        $sv = new AsyncTcpConnection('tcp://'.$conf['tcp']['host']);
         $sv->onConnect = function ($sv) {
+            echo __LINE__." : Tcp Server Call In. From " . $sv->getRemoteIp(). ":" .$sv->getRemotePOrt() . "\n";
             $timer_interval = 10;
             //每隔10秒向TCP服務器發送緩存的數據（FIFO),如果接收到發送成功的回復則承從緩存的數組中刪除此數據。
             Timer::add($timer_interval, function () {
                 global $sv;
                 global $svpipe;
                 if ($svpipe) {
-                    $sv->send(array_slice($svpipe, 0, 1));
+                    $sv->send(array_slice($svpipe, 0, 1)[0]);
                 }
             });
         };
@@ -122,9 +133,9 @@ class Events
          */
         $sv->onMessage = function ($sv, $msg) {
             global $svpipe;
-            global $config;
+            global $conf;
             $svh  = unpack("H4head/H4factory/H4psn/H4sort/H2io/H4sn/H8len/H4result/H*datatime", $msg);    //十六進制字符串數組a-address；f-function;l-length;d-data;c-crc16
-            if ($svh['head'] != '5aa5' || hexdec($svh['factory']) != $config['tcp']['fsn']) {
+            if ($svh['head'] != '5aa5' || hexdec($svh['factory']) != $conf['tcp']['fsn']) {
                 //非法信息，不予處理
             } else if ($svh['io'] == '01' && $svh['result'] == '0000') {
                 //應答信息，正確結果；刪除傳輸緩存中的信息
@@ -142,6 +153,11 @@ class Events
         $sv->onClose = function ($sv) {
             $sv->reConnect(1);
         };
+        $sv->onError = function($connection, $err_code, $err_msg)
+        {
+            echo __LINE__." : TCP ERROR. ERR_CODE:$err_code, ERR_MSG:$err_msg\n";
+        };
+        $sv->connect();
     }
     /**
      * 產生Tcp信息隨機序列號，每次+1，超過65535時從1開始。
@@ -158,9 +174,9 @@ class Events
     public static function addSvPipe($sn, $data)
     {
         global $svpipe;
-        global $config;
-        if (count($svpipe) > $config['tcp']['pipelen']) {
-            $svpipe = array_slice($svpipe, count($svpipe) - $config['tcp']['pipelen'], $config['tcp']['pipelen'], true);
+        global $conf;
+        if (count($svpipe) > $conf['tcp']['pipelen']) {
+            $svpipe = array_slice($svpipe, count($svpipe) - $conf['tcp']['pipelen'], $conf['tcp']['pipelen'], true);
         }
         $svpipe[$sn] = $data;
         return $svpipe;
@@ -185,6 +201,7 @@ class Events
     {
         $_SESSION['id'] = 0;
         $_SESSION['clientid'] = $client_id;
+        $_SESSION['psn'] = 0;
         $_SESSION['sort'] = 0;
         $_SESSION['connectbegin'] = '';
         $_SESSION['connectend'] = '';
@@ -210,26 +227,28 @@ class Events
             Events::onConnect($client_id);
         }
         $now = (new DateTime())->format('Y-m-d H:i:s');
-        // 向所有人发送
-        //Gateway::sendToAll("$client_id said $message\r\n");
         //解包数据
         $amsg = unpack("a*", $message);                     //字符數組
         $data = join($amsg);                                //字符串
         $head = substr($data, 0, 3);                        //前三個字母
         $hexa = null;
+        echo __LINE__." : ONMESSAGE [".$data."][".join('',unpack('H*',$message))."] @".$client_id.'--'.$_SESSION['psn']."\n";
+        
         if(strlen($data)>5){
             $hexa = unpack("H2a/H2f/H2l/H4d/H4c", $message);    //十六進制字符串數組a-address；f-function;l-length;d-data;c-crc16
         }
-
-        //Dryer 註冊包  @@@00017162485b30dbe2644067b6ebc5ebe0af 字符串+PSN+PWD
+        //var_dump($hexa);
+        //var_dump($_SESSION['addrh']);
+        //Dryer 註冊包  @@@7162485b30dbe2644067b6ebc5ebe0af001 字符串+PWD+PSN
         if ($head == '@@@') {
-            $psn = hexdec(substr($data, 3, 4));
-            $pwd = substr($data, 7);
-            $entity = $db->select("id,psn,sort,addr,cast(spec->'$.model' as signed) AS model,cast(spec->'$.tonnage' as signed) AS tonnage")
+            $psn = hexdec(substr($data, -4));
+            $pwd = substr($data, 3,strlen($data) - 7);
+            $entity = $db->select("id,psn,sort,addr,lastgps,cast(spec->'$.model' as signed) AS model,cast(spec->'$.tonnage' as signed) AS tonnage")
                 ->from('ym_entity')
                 ->where("flag=:flag and pwd=:pwd and psn=:psn")
                 ->bindValues(array('flag' => 1, 'psn' => $psn, 'pwd' => $pwd))
                 ->row();
+            //var_dump($entity);
             if ($entity) {
                 //登入，初始化session參數
                 $_SESSION = $entity + $_SESSION;
@@ -240,13 +259,25 @@ class Events
                 $_SESSION['gps'] = array_fill_keys(array('lat', 'lon', 'velocity', 'direction', 'type', 'cdate', 'sdate'), null);
                 $_SESSION['record'] = array_fill_keys($datakeys[$entity['sort']], null);
                 $_SESSION += array('recordindex' => 0, 'recordcount' => 0, 'cyclecount' => 0, 'lastrecord' => 0, 'lastcycle' => 0, 'last' => 0);
+                if($entity['lastgps']>0){
+                    $gps = $db->select("lat,lon,velocity,direction,type,cdate,cdate as sdate")
+                        ->from('ym_gps')
+                        ->where("id=:id")
+                        ->bindValues(array('id'=>$entity['lastgps']))
+                        ->row();
+                    if($gps){
+                        $_SESSION['gps']=$gps;
+                    }
+                }
                 //绑定Uid,group
                 Gateway::bindUid($client_id, $_SESSION['psn']);
                 Gateway::joinGroup($client_id, $_SESSION['sort']);
+                echo __LINE__." : Client LOGIN Success!\n";
             } else {
                 //登出
-                session_destroy();
+                //session_destroy();
                 Gateway::destoryCurrentClient();
+                echo __LINE__." : Client LOGIN Fail!\n";
             }
         }
         //Dryer GPS包
@@ -254,18 +285,21 @@ class Events
             $adata = explode(',', $data);
             if ($adata[0] == '$GPRMC' && count($adata) >= 12 && $adata[2] == 'A') {
                 $lat = $adata[3];
-                $fLat = ($adata[4] == 'N' ? 1 : -1) * (int) substr($lat, 0, strlen($lat) - 8) + (float) substr($lat, -8) / 60;
+                $fLat = ($adata[4] == 'N' ? 1 : -1) * (int) substr($lat, 0, strlen($lat) - 7) + (float) substr($lat, -7) / 60;
                 $lon = $adata[5];
-                $fLon = ($adata[6] == 'E' ? 1 : -1) * (int) substr($lon, 0, strlen($lon) - 8) + (float) substr($lon, -8) / 60;
+                $fLon = ($adata[6] == 'E' ? 1 : -1) * (int) substr($lon, 0, strlen($lon) - 7) + (float) substr($lon, -7) / 60;
                 $type = substr($adata[12], 0, 1);
-                $_SESSION['gps']['lat'] = $fLat; //纬度
-                $_SESSION['gps']['lon'] = $fLon; //经度
+                $_SESSION['gps']['lat'] = $fLat+3.14159; //纬度
+                $_SESSION['gps']['lon'] = $fLon-2.71828; //经度
                 $_SESSION['gps']['velocity'] = ((float) $adata[7]) * 1.852 / 3.6; //速度 m/s
                 $_SESSION['gps']['direction'] = (float) $adata[8]; //方向
                 $_SESSION['gps']['type'] = $type; //定位态别
                 $_SESSION['gps']['cdate'] = (new DateTime())->format('Y-m-d H:i:s'); //定位时间
                 $_SESSION['gpscount'] += 1;
                 Events::saveGps();
+		        echo __LINE__." : GPS OK ".$_SESSION['gps']['lat'].','.$_SESSION['gps']['lon'].' count:'.$_SESSION['gpscount']."\n";
+            }else{
+                echo __LINE__." : GPS NG \n";
             }
         }
         //Dryer 心跳包  $$$
@@ -275,20 +309,32 @@ class Events
                 $_SESSION['cyclebegin'] = $_SESSION['recordbegin'] = $now;
                 $_SESSION['cyclecount'] += 1;
                 $_SESSION['recordindex'] = 0;
-            }
+            	echo __LINE__." : $$$ CYCLECOUNT+1 = ".$_SESSION['cyclecount']."\n";
+	    }
             //发送第一笔数据请求
             Events::sendRecordAddr($client_id);
+            //Gateway::sendToClient($client_id,pack('H*','010300000001840a'));
         }
         //Dryer 数据    
         elseif ($hexa['a'] . $hexa['f'] . $hexa['l'] == $_SESSION['addrh'] . '0302') {
+            $keyscount = count($datakeys[$_SESSION['sort']]);
+            //echo __LINE__." : RECORDINDEX = ".$_SESSION['recordindex'].' ; KEYSCOUNT = '.$keyscount."\n";
             $crc16 = CrcTool::crc16(pack("H*", $hexa['a'] . $hexa['f'] . $hexa['l'] . $hexa['d']));
-            if (unpack("H4s", $crc16)['s'] == $hexa['c']) {
-                $_SESSION['record'][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] = unpack("s1int", pack("H*", $hexa['d']))['int'];
-                $_SESSION['cyclecount'] += 1;
+            
+            if (unpack("H4s", $crc16)['s'] != $hexa['c']) {
+                echo "            CRC NG \n";
+            }else if($_SESSION['recordindex'] < $keyscount){
+                $_SESSION['record'][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] = hexdec($hexa['d']);
+                echo "            CRC OK\n";
+                $_SESSION['recordindex'] += 1;
+                Events::sendRecordAddr($client_id);
             }
-            Events::sendRecordAddr($client_id);
-            Events::saveRecord($client_id);
-            Events::saveCycle($client_id);
+            if($_SESSION['recordindex'] == $keyscount){
+                echo "            RECORD OK\n";
+                Events::saveRecord($client_id);
+                Events::saveCycle($client_id);
+                $_SESSION['recordindex'] += 1;
+            }
         }
         //Dryer ERROR CODE
         elseif ($hexa['a'] . $hexa['f'] . $hexa['l'] == $_SESSION['addrh'] . '8301') {
@@ -297,14 +343,28 @@ class Events
                 $_SESSION['errorcode'] = unpack("s1int", pack("H*", $hexa['l']))['int'];
                 $_SESSION['cyclecount'] += 1;
             }
+            echo __LINE__." : ERROR CODE  @".$client_id.$_SESSION['psn']."\n";
         }
         //向SV发送位置信息
-        if ($_SESSION['sort'] == 1 && $_SESSION['gpscount'] == 1 && $_SESSION['connectbegin'] != '') {
+        if ($_SESSION['sort'] == 1 && ($_SESSION['gpscount'] == 1 || $_SESSION['recordcount'] == 1) && $_SESSION['connectbegin'] != '') {
             Events::tcpGps($_SESSION['psn']);
+            echo __LINE__." : ".$now." SNED TCP SERVER GPS OF ".$_SESSION['psn']."\n";
         }
         //向SV发送状态信息
         if ($_SESSION['sort'] == 1 && $_SESSION['recordcount']) {
             Events::tcpRecord($_SESSION['psn'], 0);
+            echo __LINE__." : ".$now."  SEND TCP SERVER RECORD OF ".$_SESSION['psn']."\n";
+        }
+        if ($_SESSION['psn']==3){
+            //print_r($_SESSION['record']);
+            echo __LINE__." : ";
+            $i = 0;
+            foreach($_SESSION['record'] as $k => $v){
+                echo "$k=>$v;  ";
+                if(++$i % 8 == 0)
+                    echo "\n      ";
+            }
+            echo "\n";
         }
     }
 
@@ -348,7 +408,11 @@ class Events
             $hexs = $_SESSION['addrh'] . '03' . $dataaddr[$_SESSION['sort']][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] . '0001';
             $crc16 = CrcTool::crc16(pack("H*", $hexs));
             $data = pack('H*',$hexs . unpack("H4s", $crc16)['s']);
-            Gateway::sendToCient($_SESSION['clientid'], $data);
+            Gateway::sendToClient($client_id, $data);
+            //Gateway::sendToClient($client_id,pack("H*",'010300000001840a'));
+            echo __LINE__.' : SEND ADDR OK ['.$_SESSION['cyclecount'].':'.$_SESSION['recordindex'].']';
+        }else{
+            echo __LINE__.' : SEND ADDR NG ['.$_SESSION['cyclecount'].';'.$_SESSION['recordindex'].']';
         }
     }
     public static function saveGps()
@@ -359,7 +423,7 @@ class Events
         }
         if (
             $_SESSION['gps']['sdate'] == null
-            or  strtotime($_SESSION['gps']['cdate']) - strtotime($_SESSION['gps']['sdate']) >= 3600
+            or  strtotime($_SESSION['gps']['cdate']) - strtotime($_SESSION['gps']['sdate']) >= 3000
         ) {
             $insert_id = 0;
             $para = array(
@@ -375,6 +439,7 @@ class Events
             if ($insert_id > 0) {
                 $_SESSION['lastgps'] = (int) $insert_id;
                 $_SESSION['gps']['sdate'] = $_SESSION['gps']['cdate'];
+                echo __LINE__." : SAVE GPS\n";
             }
         }
     }
@@ -384,7 +449,7 @@ class Events
         global $db;
         if (
             $_SESSION['recordindex'] + 1 > count($datakeys[$_SESSION['sort']])
-            && $_SESSION['cyclecount'] % 10 == 2
+            && $_SESSION['cyclecount'] % 18 == 1
         ) {
             $insert_id = 0;
             $dt = (new DateTime())->format('Y-m-d H:i:s');
@@ -399,6 +464,7 @@ class Events
             if ($insert_id > 0) {
                 $_SESSION['lastrecord'] = $insert_id;
             }
+            echo __LINE__." : SAVE RECORD\n";
         }
     }
     public static function saveCycle()
@@ -419,6 +485,7 @@ class Events
             $db->commitTrans();
             if ($insert_id) {
                 $_SESSION['lastcycle'] = $insert_id;
+                echo __LINE__." : SAVE CYCLE\n";
             }
             Events::tcpCycle($insert_id);
         }
@@ -445,7 +512,8 @@ class Events
         global $sv;
         $data = array('model' => '0000', 'tonnage' => '0000', 'lond' => '00', 'lonf' => '00', 'lonm' => '00', 'latd' => '00', 'latf' => '00', 'latm' => '00');
         if (Gateway::isUidOnline($psn)) {
-            $session = Gateway::getSession(Gateway::getClientIdByUid($psn));
+            //var_dump(GateWay::getClientIdByUid($psn)[0]);
+            $session = Gateway::getSession(Gateway::getClientIdByUid($psn)[0]);
         } else {
             $session = array();
         }
@@ -472,7 +540,7 @@ class Events
 
         $msg = pack(
             "H4H4H4H4H2H4H8" . "H4H4H2H2H2H2H2H2H8",
-            '5aaf',
+            '5aa5',
             '0003',
             $head['psn'],
             $head['sort'],
@@ -491,6 +559,7 @@ class Events
         );
         Events::addSvPipe($sn, $msg);
         $sv->send($msg);
+        echo __LINE__." : SEND TCP SERVER GPS ".join('',unpack('H*',$msg))."\n";
     }
     public static function tcpRecord($psn, $io)
     {
@@ -522,7 +591,7 @@ class Events
         }
         $msg = pack(
             "H4H4H4H4H2H4H8" . "H4H4H4H8H8H8H4H4H24",
-            '5aaf',
+            '5aa5',
             '0003',
             $head['psn'],
             $head['sort'],
@@ -544,6 +613,7 @@ class Events
             Events::addSvPipe($sn, $msg);
         }
         $sv->send($msg);
+        echo __LINE__." : SEND TCP SERVER RECORD ".join('',unpack('H*',$msg))."\n";
     }
     public static function tcpCycle($cid)
     {
@@ -566,7 +636,7 @@ class Events
 
             $msg = pack(
                 "H4H4H4H4H2H4H8" . "H4H4H4H8H4H4H4H4H4H4H4H4H4H4",
-                '5aaf',
+                '5aa5',
                 '0003',
                 $head['psn'],
                 $head['sort'],
@@ -590,6 +660,7 @@ class Events
             );
             Events::addSvPipe($sn, $msg);
             $sv->send($msg);
+            echo __LINE__." : SEND TCP SERVER CYCLE ".join('',unpack('H*',$msg))."\n";
         }
     }
 }
