@@ -95,8 +95,8 @@ $amsgs = array(
     'checkt'  => pack('H*', '5aa500030001000400003600000000'),
     'checkr'  => pack('H*', '5aa50003000100040100360000001e00010001000000000000000000000000000007E3000a000a0009000f0014')
 );
-var_dump(strlen($amsgs['addr']));
-$message = $amsgs['gps'];
+var_dump(strlen($amsgs['ini']));
+$message = $amsgs['ini'];
 $client_id = 'FFFF0001CCCC0001';
 Events::onWorkerStart(null);
 Events::onMessage($client_id,$message);
