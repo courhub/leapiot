@@ -25,7 +25,7 @@ $gateway = new Gateway("tcp://0.0.0.0:65001");
 // gateway名称，status方便查看
 $gateway->name = 'LeapIotGateway';
 // gateway进程数
-$gateway->count = 4;
+$gateway->count = 2;
 // 本机ip，分布式部署时使用内网ip
 $gateway->lanIp = '127.0.0.1';
 // 内部通讯起始端口，假如$gateway->count=4，起始端口为4000

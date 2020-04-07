@@ -318,22 +318,22 @@ class Events
         //Dryer 数据    
         elseif ($hexa['a'] . $hexa['f'] . $hexa['l'] == $_SESSION['addrh'] . '0302') {
             $keyscount = count($datakeys[$_SESSION['sort']]);
-            var_dump($hexa);
-            var_dump($_SESSION['addrh']);
+            //echo __LINE__." : RECORDINDEX = ".$_SESSION['recordindex'].' ; KEYSCOUNT = '.$keyscount."\n";
             $crc16 = CrcTool::crc16(pack("H*", $hexa['a'] . $hexa['f'] . $hexa['l'] . $hexa['d']));
-            var_dump(unpack("H4s", $crc16));
+            
             if (unpack("H4s", $crc16)['s'] != $hexa['c']) {
-                echo "            CRC NG";
+                echo "            CRC NG \n";
             }else if($_SESSION['recordindex'] < $keyscount){
                 $_SESSION['record'][$datakeys[$_SESSION['sort']][$_SESSION['recordindex']]] = hexdec($hexa['d']);
-                echo "            CRC OK";
+                echo "            CRC OK\n";
                 $_SESSION['recordindex'] += 1;
                 Events::sendRecordAddr($client_id);
-            }else if($_SESSION['recordindex'] == $keyscount){
+            }
+            if($_SESSION['recordindex'] == $keyscount){
+                echo "            RECORD OK\n";
                 Events::saveRecord($client_id);
                 Events::saveCycle($client_id);
                 $_SESSION['recordindex'] += 1;
-            }else{
             }
         }
         //Dryer ERROR CODE
@@ -343,19 +343,29 @@ class Events
                 $_SESSION['errorcode'] = unpack("s1int", pack("H*", $hexa['l']))['int'];
                 $_SESSION['cyclecount'] += 1;
             }
-            echo $now." ERROR CODE  @".$client_id.$_SESSION['psn'];
+            echo __LINE__." : ERROR CODE  @".$client_id.$_SESSION['psn']."\n";
         }
         //向SV发送位置信息
         if ($_SESSION['sort'] == 1 && ($_SESSION['gpscount'] == 1 || $_SESSION['recordcount'] == 1) && $_SESSION['connectbegin'] != '') {
             Events::tcpGps($_SESSION['psn']);
-            echo $now."  TCP GPS    FROM ".$_SESSION['psn'];
+            echo __LINE__." : ".$now." SNED TCP SERVER GPS OF ".$_SESSION['psn']."\n";
         }
         //向SV发送状态信息
         if ($_SESSION['sort'] == 1 && $_SESSION['recordcount']) {
             Events::tcpRecord($_SESSION['psn'], 0);
-            echo $now."  TCP RECORD FROM ".$_SESSION['psn'];
+            echo __LINE__." : ".$now."  SEND TCP SERVER RECORD OF ".$_SESSION['psn']."\n";
         }
-        print_r($_SESSION['record']);
+        if ($_SESSION['psn']==3){
+            //print_r($_SESSION['record']);
+            echo __LINE__." : ";
+            $i = 0;
+            foreach($_SESSION['record'] as $k => $v){
+                echo "$k=>$v;  ";
+                if(++$i % 8 == 0)
+                    echo "\n      ";
+            }
+            echo "\n";
+        }
     }
 
     /**
@@ -400,9 +410,9 @@ class Events
             $data = pack('H*',$hexs . unpack("H4s", $crc16)['s']);
             Gateway::sendToClient($client_id, $data);
             //Gateway::sendToClient($client_id,pack("H*",'010300000001840a'));
-            echo '		SEND ADDR OK ['.$_SESSION['cyclecount'].':'.$_SESSION['recordindex'].']';
+            echo __LINE__.' : SEND ADDR OK ['.$_SESSION['cyclecount'].':'.$_SESSION['recordindex'].']';
         }else{
-            echo '		SEND ADDR NG ['.$_SESSION['cyclecount'].';'.$_SESSION['recordindex'].']';
+            echo __LINE__.' : SEND ADDR NG ['.$_SESSION['cyclecount'].';'.$_SESSION['recordindex'].']';
         }
     }
     public static function saveGps()
@@ -502,7 +512,7 @@ class Events
         global $sv;
         $data = array('model' => '0000', 'tonnage' => '0000', 'lond' => '00', 'lonf' => '00', 'lonm' => '00', 'latd' => '00', 'latf' => '00', 'latm' => '00');
         if (Gateway::isUidOnline($psn)) {
-            var_dump(GateWay::getClientIdByUid($psn)[0]);
+            //var_dump(GateWay::getClientIdByUid($psn)[0]);
             $session = Gateway::getSession(Gateway::getClientIdByUid($psn)[0]);
         } else {
             $session = array();
@@ -603,7 +613,7 @@ class Events
             Events::addSvPipe($sn, $msg);
         }
         $sv->send($msg);
-        echo 'TCP GPS '.join('',unpack('H*',$msg));
+        echo __LINE__." : SEND TCP SERVER RECORD ".join('',unpack('H*',$msg))."\n";
     }
     public static function tcpCycle($cid)
     {
